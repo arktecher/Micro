@@ -1,20 +1,23 @@
 # Micro Gallery Japan
 
-A clean, refactored version of the Micro Gallery Japan project with improved code structure and best practices.
+A modern web application for connecting artists and businesses to display and sell artwork.
 
 ## Setup
 
 1. Install dependencies:
+
 ```bash
 npm install
 ```
 
 2. Start development server:
+
 ```bash
 npm run dev
 ```
 
 3. Build for production:
+
 ```bash
 npm run build
 ```
@@ -37,4 +40,3 @@ npm run build
 - React Router
 - Radix UI
 - Lucide React
-

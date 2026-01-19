@@ -2,7 +2,7 @@ import { motion } from "motion/react";
 import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import { ShoppingBag } from "lucide-react";
+import { ShoppingBag, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,10 +10,13 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { RecaptchaBadge } from "@/components/common/RecaptchaBadge";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
+import { api } from "@/lib/api";
+import { toast } from "sonner";
 
 export function CustomerSignupPage() {
   const navigate = useNavigate();
   const { login } = useAuth();
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -30,55 +33,103 @@ export function CustomerSignupPage() {
     setFormData({ ...formData, [field]: value });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     // Validate password match
     if (formData.password !== formData.confirmPassword) {
-      alert("パスワードが一致しません。");
+      toast.error("パスワードが一致しません。");
       return;
     }
 
-    // Login processing (mock) - pass user information
-    login("customer", {
-      name: formData.name,
-      email: formData.email,
-    });
+    if (!formData.agreeToTerms) {
+      toast.error("利用規約に同意してください。");
+      return;
+    }
 
-    // Check for pending favorite artwork ID
-    const pendingFavoriteId = localStorage.getItem("mgj_pending_favorite_artwork_id");
-    const redirectPath = localStorage.getItem("mgj_redirect_after_signup");
+    setIsSubmitting(true);
 
-    if (pendingFavoriteId) {
-      // Add to favorites (mock)
-      const favorites = JSON.parse(
-        localStorage.getItem("mgj_customer_favorites") || "[]"
-      );
-      if (!favorites.includes(pendingFavoriteId)) {
-        favorites.push(pendingFavoriteId);
-        localStorage.setItem("mgj_customer_favorites", JSON.stringify(favorites));
+    try {
+      const registrationData = {
+        name: formData.name,
+        email: formData.email,
+        password: formData.password,
+        agree_to_terms: formData.agreeToTerms,
+      };
+
+      // Call backend API
+      const response = await api.post<{
+        access_token: string;
+        token_type: string;
+        user: {
+          id: string;
+          email: string;
+          user_type: string;
+          name: string;
+        };
+      }>("/auth/signup/customer", registrationData);
+
+      // Store access token
+      if (response.access_token) {
+        localStorage.setItem("mgj_access_token", response.access_token);
       }
 
-      // Dispatch event to update header numbers
-      window.dispatchEvent(new Event("favoritesUpdated"));
+      // Login user with AuthContext
+      login("customer", {
+        id: response.user.id,
+        name: response.user.name,
+        email: response.user.email,
+      });
 
-      // Cleanup
-      localStorage.removeItem("mgj_pending_favorite_artwork_id");
-      localStorage.removeItem("mgj_redirect_after_signup");
+      toast.success("アカウントが作成されました");
 
-      // Return to original page
-      if (redirectPath) {
-        navigate(redirectPath);
+      // Check for pending favorite artwork ID
+      const pendingFavoriteId = localStorage.getItem("mgj_pending_favorite_artwork_id");
+      const redirectPath = localStorage.getItem("mgj_redirect_after_signup");
+
+      if (pendingFavoriteId) {
+        // Add to favorites (mock - will be replaced with API call later)
+        const favorites = JSON.parse(
+          localStorage.getItem("mgj_customer_favorites") || "[]"
+        );
+        if (!favorites.includes(pendingFavoriteId)) {
+          favorites.push(pendingFavoriteId);
+          localStorage.setItem("mgj_customer_favorites", JSON.stringify(favorites));
+        }
+
+        // Dispatch event to update header numbers
+        window.dispatchEvent(new Event("favoritesUpdated"));
+
+        // Cleanup
+        localStorage.removeItem("mgj_pending_favorite_artwork_id");
+        localStorage.removeItem("mgj_redirect_after_signup");
+
+        // Return to original page
+        if (redirectPath) {
+          navigate(redirectPath);
+        } else {
+          navigate("/my-page");
+        }
       } else {
-        navigate("/my-page");
+        // Normal signup goes to my page
+        if (redirectPath) {
+          navigate(redirectPath);
+        } else {
+          navigate("/my-page");
+        }
       }
-    } else {
-      // Normal signup goes to my page
-      if (redirectPath) {
-        navigate(redirectPath);
+    } catch (error: any) {
+      console.error("Signup error:", error);
+      
+      if (error.message.includes("already registered") || error.message.includes("already exists")) {
+        toast.error("このメールアドレスは既に登録されています");
+      } else if (error.message.includes("password")) {
+        toast.error("パスワードは8文字以上である必要があります");
       } else {
-        navigate("/my-page");
+        toast.error(error.message || "アカウント作成に失敗しました。もう一度お試しください。");
       }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -202,9 +253,16 @@ export function CustomerSignupPage() {
               <Button
                 type="submit"
                 className="w-full bg-[#222] hover:bg-[#333] text-white h-11 sm:h-12"
-                disabled={!formData.agreeToTerms}
+                disabled={!formData.agreeToTerms || isSubmitting}
               >
-                アカウントを作成
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    登録中...
+                  </>
+                ) : (
+                  "アカウントを作成"
+                )}
               </Button>
 
               {/* reCAPTCHA v3 Badge */}

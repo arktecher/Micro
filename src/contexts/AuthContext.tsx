@@ -12,6 +12,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   userType: "artist" | "corporate" | "customer" | null;
   currentUser: User | null;
+  accessToken: string | null;
   login: (type: "artist" | "corporate" | "customer", userData?: { id: string; name: string; email: string }) => void;
   logout: () => void;
 }
@@ -22,17 +23,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [userType, setUserType] = useState<"artist" | "corporate" | "customer" | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
 
   // 初期化時にlocalStorageから読み込み
   useEffect(() => {
     const storedAuth = localStorage.getItem(STORAGE_KEYS.IS_AUTHENTICATED);
     const storedUserType = localStorage.getItem(STORAGE_KEYS.USER_TYPE) as "artist" | "corporate" | "customer" | null;
     const storedUser = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
+    const storedToken = localStorage.getItem("mgj_access_token");
     
     if (storedAuth === "true" && storedUserType && storedUser) {
       setIsAuthenticated(true);
       setUserType(storedUserType);
       setCurrentUser(JSON.parse(storedUser));
+      if (storedToken) {
+        setAccessToken(storedToken);
+      }
     }
   }, []);
 
@@ -48,6 +54,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
     
     setCurrentUser(newUser);
+    
+    // Get token from localStorage if available
+    const token = localStorage.getItem("mgj_access_token");
+    if (token) {
+      setAccessToken(token);
+    }
+    
     localStorage.setItem(STORAGE_KEYS.IS_AUTHENTICATED, "true");
     localStorage.setItem(STORAGE_KEYS.USER_TYPE, type);
     localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(newUser));
@@ -57,14 +70,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsAuthenticated(false);
     setUserType(null);
     setCurrentUser(null);
+    setAccessToken(null);
     localStorage.removeItem(STORAGE_KEYS.IS_AUTHENTICATED);
     localStorage.removeItem(STORAGE_KEYS.USER_TYPE);
     localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+    localStorage.removeItem("mgj_access_token");
     window.dispatchEvent(new Event("favoritesUpdated"));
   };
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, userType, currentUser, login, logout }}>
+    <AuthContext.Provider value={{ isAuthenticated, userType, currentUser, accessToken, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

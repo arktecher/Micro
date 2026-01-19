@@ -14,6 +14,7 @@ import {
   Sparkles,
   AlertCircle,
   Flag,
+  Loader2,
 } from "lucide-react";
 
 import { Header } from "@/components/layout/Header";
@@ -31,6 +32,8 @@ import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RecaptchaBadge } from "@/components/common/RecaptchaBadge";
 import { useAuth } from "@/contexts/AuthContext";
+import { api } from "@/lib/api";
+import { toast } from "sonner";
 
 const STEPS = [
   { id: 1, title: "基本情報", description: "アカウント情報の入力" },
@@ -47,6 +50,7 @@ export function ArtistSignupPage() {
   const navigate = useNavigate();
   const { login } = useAuth();
   const [currentStep, setCurrentStep] = useState(1);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Form fields
   const [name, setName] = useState("");
@@ -92,30 +96,69 @@ export function ArtistSignupPage() {
     }
   };
 
-  const handleSubmit = () => {
-    const registrationData = {
-      name,
-      birthDate,
-      email,
-      phone,
-      password,
-      agreements: {
-        copyright: agreeCopyright,
-        ai: agreeAI,
-        commercial: agreeCommercial,
-        report: agreeReport,
-      } as AgreementData,
-    };
+  const handleSubmit = async () => {
+    if (!isFormValid) {
+      toast.error("すべての必須項目を入力してください");
+      return;
+    }
 
-    console.log("Artist registration data:", registrationData);
+    setIsSubmitting(true);
 
-    // Login user with AuthContext
-    login("artist", {
-      name: name,
-      email: email,
-    });
+    try {
+      const registrationData = {
+        name,
+        birth_date: birthDate || null,
+        email,
+        phone: phone || null,
+        password,
+        agreements: {
+          copyright: agreeCopyright,
+          ai: agreeAI,
+          commercial: agreeCommercial,
+          report: agreeReport,
+        },
+      };
 
-    navigate("/signup/artist/welcome");
+      // Call backend API
+      const response = await api.post<{
+        access_token: string;
+        token_type: string;
+        user: {
+          id: string;
+          email: string;
+          user_type: string;
+          name: string;
+        };
+      }>("/auth/signup/artist", registrationData);
+
+      // Store access token
+      if (response.access_token) {
+        localStorage.setItem("mgj_access_token", response.access_token);
+      }
+
+      // Login user with AuthContext
+      login("artist", {
+        id: response.user.id,
+        name: response.user.name,
+        email: response.user.email,
+      });
+
+      toast.success("アカウントが作成されました");
+      navigate("/signup/artist/welcome");
+    } catch (error: any) {
+      console.error("Signup error:", error);
+      
+      // Handle specific error messages
+      if (error.message.includes("already registered") || error.message.includes("already exists")) {
+        toast.error("このメールアドレスは既に登録されています");
+      } else if (error.message.includes("password")) {
+        toast.error("パスワードは8文字以上である必要があります");
+      } else {
+        toast.error(error.message || "アカウント作成に失敗しました。もう一度お試しください。");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -462,68 +505,11 @@ export function ArtistSignupPage() {
           {/* Navigation Buttons */}
           <Card className="bg-white mt-4 sm:mt-6">
             <CardContent className="pt-4 sm:pt-6 px-4 sm:px-6">
-              {/* デバッグ情報（開発時のみ表示） */}
-              <div className="mb-4 p-3 bg-gray-100 rounded text-xs font-mono">
-                <div className="mb-2">
-                  <strong>同意状況:</strong>
-                </div>
-                <div>
-                  著作権: {agreeCopyright ? "✓" : "✗"} / AI: {agreeAI ? "✓" : "✗"} / 商用:{" "}
-                  {agreeCommercial ? "✓" : "✗"} / 通報: {agreeReport ? "✓" : "✗"}
-                </div>
-
-                <div className="mt-3 mb-2">
-                  <strong>入力値（実際の値）:</strong>
-                </div>
-                <div>
-                  名前: "{name}" ({name ? "✓" : "✗"})
-                </div>
-                <div>
-                  メール: "{email}" ({email ? "✓" : "✗"})
-                </div>
-                <div>
-                  パスワード: "{password}" ({password ? "✓" : "✗"})
-                </div>
-                <div>
-                  パスワード確認: "{confirmPassword}" ({confirmPassword ? "✓" : "✗"})
-                </div>
-                <div>
-                  パスワード一致: {password === confirmPassword ? "✓" : "✗"}
-                </div>
-
-                <div className="mt-3 p-2 bg-white rounded">
-                  <strong>
-                    ボタン状態: {isFormValid ? "✓ 有効" : "✗ 無効"}
-                  </strong>
-                </div>
-
-                {/* テスト用ボタン */}
-                <div className="mt-3 p-2 bg-yellow-50 rounded border border-yellow-300">
-                  <div className="mb-2 text-xs">
-                    <strong>テスト用:</strong>
-                  </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      setName("テスト太郎");
-                      setEmail("test@example.com");
-                      setPassword("testpass123");
-                      setConfirmPassword("testpass123");
-                    }}
-                    className="text-xs h-7"
-                  >
-                    全フィールドを自動入力
-                  </Button>
-                </div>
-              </div>
-
               <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 sm:gap-0">
                 <Button
                   variant="outline"
                   onClick={handleBack}
-                  disabled={currentStep === 1}
+                  disabled={currentStep === 1 || isSubmitting}
                   className="w-full sm:w-auto px-6 order-2 sm:order-1"
                 >
                   <ArrowLeft className="w-4 h-4 mr-2" />
@@ -533,10 +519,19 @@ export function ArtistSignupPage() {
                 <Button
                   onClick={handleNext}
                   className="bg-primary hover:bg-primary/90 w-full sm:w-auto px-6 sm:px-8 flex items-center justify-center gap-2 order-1 sm:order-2"
-                  disabled={!isFormValid}
+                  disabled={!isFormValid || isSubmitting}
                 >
-                  <span>登録を完了する</span>
-                  <ArrowRight className="w-4 h-4" />
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>登録中...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>登録を完了する</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
                 </Button>
               </div>
 

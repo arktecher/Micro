@@ -23,6 +23,7 @@ import {
   Plus,
   X,
   Image as ImageIcon,
+  Loader2,
 } from "lucide-react";
 
 import { useAuth } from "@/contexts/AuthContext";
@@ -43,6 +44,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { RecaptchaBadge } from "@/components/common/RecaptchaBadge";
+import { api } from "@/lib/api";
 
 const STEPS = [
   { id: 1, title: "基本情報", description: "会社・担当者情報の入力" },
@@ -312,15 +314,79 @@ export function CorporateSignupPage() {
 
   const canProceedStep3 = true;
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (currentStep === 1) {
-      login("corporate", {
-        id: `CRP-${Date.now()}`,
-        name: contactName,
-        email: email,
-      });
-      setShowWelcome(true);
-      window.scrollTo(0, 0);
+      // Validate step 1 fields
+      if (!companyName || !contactName || !email || !password || password !== confirmPassword) {
+        toast.error("すべての必須項目を入力してください");
+        return;
+      }
+
+      if (password.length < 8) {
+        toast.error("パスワードは8文字以上である必要があります");
+        return;
+      }
+
+      setIsSubmitting(true);
+
+      try {
+        const registrationData = {
+          company_name: companyName,
+          contact_name: contactName,
+          email: email,
+          password: password,
+          postal_code: postalCode || null,
+          company_address: companyAddress || null,
+          phone: phone || null,
+        };
+
+        // Call backend API
+        const response = await api.post<{
+          access_token: string;
+          token_type: string;
+          user: {
+            id: string;
+            email: string;
+            user_type: string;
+            name: string;
+            company_name: string;
+          };
+        }>("/auth/signup/corporate", registrationData);
+
+        // Store access token
+        if (response.access_token) {
+          localStorage.setItem("mgj_access_token", response.access_token);
+        }
+
+        // Login user with AuthContext
+        login("corporate", {
+          id: response.user.id,
+          name: response.user.name,
+          email: response.user.email,
+        });
+
+        toast.success("アカウントが作成されました");
+        setShowWelcome(true);
+        window.scrollTo(0, 0);
+        
+        // Move to step 2 after welcome
+        setTimeout(() => {
+          setShowWelcome(false);
+          setCurrentStep(2);
+        }, 2000);
+      } catch (error: any) {
+        console.error("Signup error:", error);
+        
+        if (error.message.includes("already registered") || error.message.includes("already exists")) {
+          toast.error("このメールアドレスは既に登録されています");
+        } else if (error.message.includes("password")) {
+          toast.error("パスワードは8文字以上である必要があります");
+        } else {
+          toast.error(error.message || "アカウント作成に失敗しました。もう一度お試しください。");
+        }
+      } finally {
+        setIsSubmitting(false);
+      }
     } else if (currentStep < STEPS.length) {
       setCurrentStep(currentStep + 1);
     } else {
@@ -335,19 +401,34 @@ export function CorporateSignupPage() {
   };
 
   const handleSubmit = async () => {
+    // For now, spaces are saved locally
+    // TODO: Create spaces via API after corporate signup is complete
     setIsSubmitting(true);
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-
-    login("corporate", {
-      id: `CRP-${Date.now()}`,
-      name: contactName,
-      email: email,
-    });
-
-    await new Promise((resolve) => setTimeout(resolve, 100));
-
-    setIsSubmitting(false);
-    setShowSuccess(true);
+    
+    try {
+      // Save spaces to localStorage for now
+      // In the future, this will be an API call to create spaces
+      const spacesData = spaces.map(space => ({
+        id: space.id,
+        facilityType: space.facilityType,
+        facilityTypeOther: space.facilityTypeOther,
+        subType: space.subType,
+        subTypeOther: space.subTypeOther,
+        spaceName: space.spaceName,
+        location: space.location,
+      }));
+      
+      localStorage.setItem("mgj_corporate_spaces", JSON.stringify(spacesData));
+      
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      
+      setIsSubmitting(false);
+      setShowSuccess(true);
+    } catch (error) {
+      console.error("Error saving spaces:", error);
+      toast.error("スペース情報の保存に失敗しました");
+      setIsSubmitting(false);
+    }
   };
 
   const addSpace = () => {
@@ -1355,7 +1436,7 @@ export function CorporateSignupPage() {
                 <Button
                   onClick={handleNext}
                   disabled={
-                    (currentStep === 1 && !canProceedStep1) ||
+                    (currentStep === 1 && (!companyName || !contactName || !email || !password || password !== confirmPassword)) ||
                     (currentStep === 2 && !canProceedStep2) ||
                     (currentStep === 3 && !canProceedStep3) ||
                     isSubmitting
@@ -1364,7 +1445,7 @@ export function CorporateSignupPage() {
                 >
                   {isSubmitting ? (
                     <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <Loader2 className="w-4 h-4 animate-spin" />
                       <span>登録中...</span>
                     </>
                   ) : currentStep === STEPS.length ? (

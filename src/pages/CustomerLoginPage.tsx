@@ -2,13 +2,14 @@ import { motion } from "motion/react";
 import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import { ShoppingBag } from "lucide-react";
+import { ShoppingBag, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
+import { api } from "@/lib/api";
 
 export function CustomerLoginPage() {
   const navigate = useNavigate();
@@ -27,25 +28,35 @@ export function CustomerLoginPage() {
     setLoading(true);
 
     try {
-      // Mock authentication - in production, this would call an API
-      // For now, we'll accept any email/password combination
       if (!email || !password) {
         toast.error("メールアドレスとパスワードを入力してください");
         setLoading(false);
         return;
       }
 
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 500));
+      const response = await api.post<{
+        access_token: string;
+        token_type: string;
+        user: {
+          id: string;
+          email: string;
+          user_type: string;
+          name: string;
+        };
+      }>("/auth/login/customer", {
+        email,
+        password,
+      });
 
-      // Mock user data - in production, this would come from the API
-      const mockUser = {
-        id: "BYR-001",
-        name: "購入者ユーザー",
-        email: email
-      };
+      if (response.access_token) {
+        localStorage.setItem("mgj_access_token", response.access_token);
+      }
 
-      login("customer", mockUser);
+      login("customer", {
+        id: response.user.id,
+        name: response.user.name,
+        email: response.user.email,
+      });
 
       toast.success("ログインしました");
 
@@ -66,9 +77,11 @@ export function CustomerLoginPage() {
         // Navigate to my-page if it exists, otherwise go to home
         navigate("/my-page#profile");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Login error:", error);
-      toast.error("ログインに失敗しました");
+      toast.error("ログインに失敗しました", {
+        description: error.message || "メールアドレスまたはパスワードが正しくありません。",
+      });
     } finally {
       setLoading(false);
     }
@@ -150,7 +163,14 @@ export function CustomerLoginPage() {
                 className="w-full h-11 sm:h-12 bg-gray-900 hover:bg-gray-800 text-white"
                 disabled={loading}
               >
-                {loading ? "ログイン中..." : "ログイン"}
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                    ログイン中...
+                  </>
+                ) : (
+                  "ログイン"
+                )}
               </Button>
             </form>
 

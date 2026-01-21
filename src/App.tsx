@@ -41,6 +41,8 @@ import { FavoritesPage } from "./pages/FavoritesPage";
 import { ArtworkConfirmationPage } from "./pages/ArtworkConfirmationPage";
 import { PurchasePage } from "./pages/PurchasePage";
 import { ArtworkViewPage } from "./pages/ArtworkViewPage";
+import { SignupConfirmPage } from "./pages/SignupConfirmPage";
+import { SupabaseAuthRedirectHandler } from "./components/common/SupabaseAuthRedirectHandler";
 import { Toaster } from "./components/ui/sonner";
 
 export default function App() {
@@ -48,6 +50,7 @@ export default function App() {
     <Router>
       <AuthProvider>
         <Toaster />
+        <SupabaseAuthRedirectHandler />
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/artworks" element={<ArtworksPage />} />
@@ -84,6 +87,7 @@ export default function App() {
           <Route path="/login/customer" element={<CustomerLoginPage />} />
           <Route path="/login/corporate" element={<CorporateLoginPage />} />
           <Route path="/signup/customer" element={<CustomerSignupPage />} />
+          <Route path="/signup/confirm" element={<SignupConfirmPage />} />
           <Route path="/ai-artwork-preview" element={<AIArtworkPreviewPage />} />
           <Route path="/my-page" element={<MyPage />} />
           <Route path="/favorites" element={<FavoritesPage />} />

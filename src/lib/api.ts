@@ -36,8 +36,8 @@ export const api = {
     });
     
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: "An error occurred" }));
-      throw new Error(error.detail || error.message || `HTTP error! status: ${response.status}`);
+      const error = await response.json().catch(() => ({ detail: "エラーが発生しました" }));
+      throw new Error(error.detail || error.message || `エラーが発生しました。ステータスコード: ${response.status}`);
     }
     
     return response.json();

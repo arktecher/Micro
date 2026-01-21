@@ -105,6 +105,9 @@ export function ArtistSignupPage() {
     setIsSubmitting(true);
 
     try {
+      // Used by /signup/confirm to show the right next-step CTA
+      localStorage.setItem("mgj_pending_signup_role", "artist");
+
       const registrationData = {
         name,
         birth_date: birthDate || null,
@@ -131,12 +134,18 @@ export function ArtistSignupPage() {
         };
       }>("/auth/signup/artist", registrationData);
 
-      // Store access token
-      if (response.access_token) {
-        localStorage.setItem("mgj_access_token", response.access_token);
+      // If email confirmation is enabled, Supabase returns no session/access_token.
+      // In that case, do NOT log the user in yet.
+      if (!response.access_token) {
+        toast.success("確認メールを送信しました", {
+          description: "受信ボックスでメールを開き、確認を完了してください。",
+        });
+        navigate("/signup/artist/welcome");
+        return;
       }
 
-      // Login user with AuthContext
+      // Email confirmation disabled OR immediate session is issued.
+      localStorage.setItem("mgj_access_token", response.access_token);
       login("artist", {
         id: response.user.id,
         name: response.user.name,
@@ -148,13 +157,27 @@ export function ArtistSignupPage() {
     } catch (error: any) {
       console.error("Signup error:", error);
       
-      // Handle specific error messages
-      if (error.message.includes("already registered") || error.message.includes("already exists")) {
-        toast.error("このメールアドレスは既に登録されています");
-      } else if (error.message.includes("password")) {
+      const errorMessage = error.message || "";
+      
+      // Handle duplicate email error
+      if (
+        errorMessage.includes("既に登録されています") ||
+        errorMessage.includes("already registered") ||
+        errorMessage.includes("already exists") ||
+        errorMessage.includes("duplicate")
+      ) {
+        toast.error("このメールアドレスは既に登録されています", {
+          description: "ログインページからログインしてください。",
+          duration: 5000,
+          action: {
+            label: "ログインへ",
+            onClick: () => navigate("/login/artist"),
+          },
+        });
+      } else if (errorMessage.includes("password") || errorMessage.includes("パスワード")) {
         toast.error("パスワードは8文字以上である必要があります");
       } else {
-        toast.error(error.message || "アカウント作成に失敗しました。もう一度お試しください。");
+        toast.error(errorMessage || "アカウント作成に失敗しました。もう一度お試しください。");
       }
     } finally {
       setIsSubmitting(false);

@@ -76,6 +76,22 @@ export function SupabaseAuthRedirectHandler() {
         navigate("/signup/confirm?status=confirmed", { replace: true });
         return;
       }
+
+      if (flowType === "recovery") {
+        // Password reset flow - store both tokens and redirect to reset password page
+        if (accessToken) {
+          sessionStorage.setItem("mgj_reset_token", accessToken);
+          
+          // Also store refresh_token if available (needed for setSession)
+          const refreshToken = hashParams.get("refresh_token");
+          if (refreshToken) {
+            sessionStorage.setItem("mgj_reset_refresh_token", refreshToken);
+          }
+        }
+        window.history.replaceState({}, document.title, window.location.origin + window.location.pathname);
+        navigate("/reset-password", { replace: true });
+        return;
+      }
     }
 
     // Supabase verify redirect (no tokens) often lands with ?type=signup
@@ -83,6 +99,14 @@ export function SupabaseAuthRedirectHandler() {
     if (typeMatch) {
       window.history.replaceState({}, document.title, window.location.origin + window.location.pathname);
       navigate("/signup/confirm?status=confirmed", { replace: true });
+      return;
+    }
+
+    // Password reset redirect (no tokens, just type=recovery)
+    const recoveryMatch = /(^|[?&#])type=recovery($|[&#])/i.test(combined);
+    if (recoveryMatch) {
+      window.history.replaceState({}, document.title, window.location.origin + window.location.pathname);
+      navigate("/reset-password", { replace: true });
     }
   }, [location.key, navigate]);
 

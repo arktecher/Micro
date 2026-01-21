@@ -42,6 +42,8 @@ import { ArtworkConfirmationPage } from "./pages/ArtworkConfirmationPage";
 import { PurchasePage } from "./pages/PurchasePage";
 import { ArtworkViewPage } from "./pages/ArtworkViewPage";
 import { SignupConfirmPage } from "./pages/SignupConfirmPage";
+import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
+import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { SupabaseAuthRedirectHandler } from "./components/common/SupabaseAuthRedirectHandler";
 import { Toaster } from "./components/ui/sonner";
 
@@ -88,6 +90,8 @@ export default function App() {
           <Route path="/login/corporate" element={<CorporateLoginPage />} />
           <Route path="/signup/customer" element={<CustomerSignupPage />} />
           <Route path="/signup/confirm" element={<SignupConfirmPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/ai-artwork-preview" element={<AIArtworkPreviewPage />} />
           <Route path="/my-page" element={<MyPage />} />
           <Route path="/favorites" element={<FavoritesPage />} />

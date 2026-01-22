@@ -2,9 +2,9 @@
  * API Configuration and utilities
  */
 
-// API base URL - can be overridden via environment variable
-// Set VITE_API_BASE_URL in .env file if needed
-const API_BASE_URL = "http://localhost:8000/api/v1";
+// API base URL - imported from environment variable
+// Set VITE_API_BASE_URL in .env file (defaults to localhost:8000)
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api/v1";
 
 export const api = {
   baseUrl: API_BASE_URL,

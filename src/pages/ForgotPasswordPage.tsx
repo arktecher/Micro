@@ -39,7 +39,18 @@ export function ForgotPasswordPage() {
       });
     } catch (error: any) {
       console.error("Forgot password error:", error);
-      // Always show success message (security best practice - don't reveal if email exists)
+      const errorMessage = error.message || "";
+      
+      // Check for rate limit error (429 status)
+      if (errorMessage.includes("上限に達しました") || errorMessage.includes("rate limit") || errorMessage.includes("429")) {
+        toast.error("メール送信の上限に達しました", {
+          description: "1時間あたり2通まで送信可能です。しばらく時間をおいてから再度お試しください。",
+          duration: 8000,
+        });
+        return; // Don't show success screen if rate limited
+      }
+      
+      // For other errors, still show success message (security best practice - don't reveal if email exists)
       setIsSubmitted(true);
       toast.success("パスワードリセット用のメールを送信しました", {
         description: "メールアドレスが登録されている場合、リセットリンクを送信しました。",

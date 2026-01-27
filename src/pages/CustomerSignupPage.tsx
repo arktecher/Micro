@@ -192,6 +192,7 @@ export function CustomerSignupPage() {
                   placeholder="山田 太郎"
                   value={formData.name}
                   onChange={(e) => handleChange("name", e.target.value)}
+                  className="bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
                   required
                 />
               </div>
@@ -204,6 +205,7 @@ export function CustomerSignupPage() {
                   placeholder="example@email.com"
                   value={formData.email}
                   onChange={(e) => handleChange("email", e.target.value)}
+                  className="bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
                   required
                 />
               </div>
@@ -216,6 +218,7 @@ export function CustomerSignupPage() {
                   placeholder="8文字以上"
                   value={formData.password}
                   onChange={(e) => handleChange("password", e.target.value)}
+                  className="bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
                   required
                   minLength={8}
                 />
@@ -234,6 +237,7 @@ export function CustomerSignupPage() {
                   onChange={(e) =>
                     handleChange("confirmPassword", e.target.value)
                   }
+                  className="bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
                   required
                   minLength={8}
                 />

@@ -106,7 +106,7 @@ export function ArtistLoginPage() {
                   placeholder="example@email.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="h-11"
+                  className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
                   required
                 />
               </div>
@@ -119,7 +119,7 @@ export function ArtistLoginPage() {
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="h-11"
+                  className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
                   required
                 />
               </div>

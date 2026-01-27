@@ -1,5 +1,7 @@
 import { useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
+import { api } from "@/lib/api";
 
 function safeDecodeJwtPayload(token: string): any | null {
   try {
@@ -30,6 +32,7 @@ function safeDecodeJwtPayload(token: string): any | null {
 export function SupabaseAuthRedirectHandler() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { login } = useAuth();
 
   useEffect(() => {
     const search = window.location.search || "";
@@ -55,18 +58,53 @@ export function SupabaseAuthRedirectHandler() {
     // This conflicts with HashRouter routing, so we normalize it.
     if (hash.startsWith("#access_token=") || hash.includes("access_token=")) {
       const accessToken = hashParams.get("access_token");
+      const refreshToken = hashParams.get("refresh_token");
       const flowType = (hashParams.get("type") || "").toLowerCase();
 
       if (accessToken) {
         localStorage.setItem("mgj_access_token", accessToken);
+        if (refreshToken) {
+          localStorage.setItem("mgj_refresh_token", refreshToken);
+        }
 
         const payload = safeDecodeJwtPayload(accessToken);
         const userType =
           payload?.user_metadata?.user_type ||
           payload?.app_metadata?.user_type ||
           payload?.user_type;
+        const userId = payload?.sub || payload?.user_id;
+        const userName = payload?.user_metadata?.name || payload?.name || "";
+        const userEmail = payload?.email || "";
+
         if (userType === "artist" || userType === "corporate" || userType === "customer") {
           localStorage.setItem("mgj_pending_signup_role", userType);
+        }
+
+        // Auto-login user if we have token and user info
+        if (flowType === "signup" && userType && userId) {
+          // Try to fetch full user profile from backend, fallback to JWT payload
+          api.get<{
+            id: string;
+            email: string;
+            name: string;
+            user_type: string;
+          }>("/users/me")
+            .then((userData) => {
+              // Auto-login with fetched user data
+              login(userType as "artist" | "corporate" | "customer", {
+                id: userData.id,
+                name: userData.name,
+                email: userData.email,
+              });
+            })
+            .catch(() => {
+              // If API call fails, use JWT payload data
+              login(userType as "artist" | "corporate" | "customer", {
+                id: userId,
+                name: userName || "ユーザー",
+                email: userEmail,
+              });
+            });
         }
       }
 
@@ -108,7 +146,7 @@ export function SupabaseAuthRedirectHandler() {
       window.history.replaceState({}, document.title, window.location.origin + window.location.pathname);
       navigate("/reset-password", { replace: true });
     }
-  }, [location.key, navigate]);
+  }, [location.key, navigate, login]);
 
   return null;
 }

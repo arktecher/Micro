@@ -941,7 +941,7 @@ export function CorporateSignupPage() {
                       value={companyName}
                       onChange={(e) => setCompanyName(e.target.value)}
                       placeholder="例：株式会社〇〇、レストラン花、〇〇総合病院"
-                      className="h-11 sm:h-12 text-sm sm:text-base"
+                      className="h-11 sm:h-12 text-sm sm:text-base bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
                     />
                     <p className="text-xs text-gray-500">
                       ※
@@ -963,7 +963,7 @@ export function CorporateSignupPage() {
                       value={postalCode}
                       onChange={(e) => handlePostalCodeChange(e.target.value)}
                       placeholder="123-4567"
-                      className="h-11 sm:h-12 text-sm sm:text-base"
+                      className="h-11 sm:h-12 text-sm sm:text-base bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
                       maxLength={8}
                       disabled={isLoadingAddress}
                     />
@@ -988,7 +988,7 @@ export function CorporateSignupPage() {
                       value={companyAddress}
                       onChange={(e) => setCompanyAddress(e.target.value)}
                       placeholder="東京都渋谷区〇〇1-2-3 ○○ビル4F"
-                      className="h-11 sm:h-12 text-sm sm:text-base"
+                      className="h-11 sm:h-12 text-sm sm:text-base bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
                     />
                     <p className="text-xs text-gray-500">
                       郵便番号から自動入力後、番地・建物名を追加してください
@@ -1009,7 +1009,7 @@ export function CorporateSignupPage() {
                       value={contactName}
                       onChange={(e) => setContactName(e.target.value)}
                       placeholder="山田 太郎"
-                      className="h-11 sm:h-12 text-sm sm:text-base"
+                      className="h-11 sm:h-12 text-sm sm:text-base bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
                     />
                     <p className="text-xs text-gray-500">
                       まずは1名を登録してください。登録後、マイページから複数の担当者追加できます
@@ -1031,7 +1031,7 @@ export function CorporateSignupPage() {
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="contact@example.com"
-                      className="h-11 sm:h-12 text-sm sm:text-base"
+                      className="h-11 sm:h-12 text-sm sm:text-base bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
                     />
                   </div>
 
@@ -1051,7 +1051,7 @@ export function CorporateSignupPage() {
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
                       placeholder="03-1234-5678"
-                      className="h-11 sm:h-12 text-sm sm:text-base"
+                      className="h-11 sm:h-12 text-sm sm:text-base bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
                     />
                   </div>
 
@@ -1070,7 +1070,7 @@ export function CorporateSignupPage() {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="8文字以上"
-                      className="h-11 sm:h-12 text-sm sm:text-base"
+                      className="h-11 sm:h-12 text-sm sm:text-base bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
                     />
                   </div>
 
@@ -1089,7 +1089,7 @@ export function CorporateSignupPage() {
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
                       placeholder="パスワードを再入力"
-                      className="h-11 sm:h-12 text-sm sm:text-base"
+                      className="h-11 sm:h-12 text-sm sm:text-base bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
                     />
                     {confirmPassword && password !== confirmPassword && (
                       <p className="text-xs sm:text-sm text-red-500">

@@ -296,7 +296,7 @@ export function ArtistSignupPage() {
                         placeholder="山田 太郎"
                         value={name}
                         onChange={(e) => setName(e.target.value)}
-                        className="flex h-10 sm:h-12 w-full rounded-md border border-input bg-white px-3 py-1 text-sm sm:text-base transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                        className="flex h-10 sm:h-12 w-full rounded-md border border-gray-200 bg-gray-100 px-3 py-1 text-sm sm:text-base transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:bg-white focus-visible:border-primary disabled:cursor-not-allowed disabled:opacity-50"
                       />
                     </div>
 
@@ -310,7 +310,7 @@ export function ArtistSignupPage() {
                         type="date"
                         value={birthDate}
                         onChange={(e) => setBirthDate(e.target.value)}
-                        className="flex h-10 sm:h-12 w-full rounded-md border border-input bg-white px-3 py-1 text-sm sm:text-base transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                        className="flex h-10 sm:h-12 w-full rounded-md border border-gray-200 bg-gray-100 px-3 py-1 text-sm sm:text-base transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:bg-white focus-visible:border-primary disabled:cursor-not-allowed disabled:opacity-50"
                       />
                     </div>
 
@@ -326,7 +326,7 @@ export function ArtistSignupPage() {
                         placeholder="example@email.com"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
-                        className="flex h-10 sm:h-12 w-full rounded-md border border-input bg-white px-3 py-1 text-sm sm:text-base transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                        className="flex h-10 sm:h-12 w-full rounded-md border border-gray-200 bg-gray-100 px-3 py-1 text-sm sm:text-base transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:bg-white focus-visible:border-primary disabled:cursor-not-allowed disabled:opacity-50"
                       />
                       <p className="text-xs text-gray-500">
                         ※ サイト上では非公開です
@@ -345,7 +345,7 @@ export function ArtistSignupPage() {
                         placeholder="090-1234-5678"
                         value={phone}
                         onChange={(e) => setPhone(e.target.value)}
-                        className="flex h-10 sm:h-12 w-full rounded-md border border-input bg-white px-3 py-1 text-sm sm:text-base transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                        className="flex h-10 sm:h-12 w-full rounded-md border border-gray-200 bg-gray-100 px-3 py-1 text-sm sm:text-base transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:bg-white focus-visible:border-primary disabled:cursor-not-allowed disabled:opacity-50"
                       />
                       <p className="text-xs text-gray-500">
                         ※ サイト上では非公開です
@@ -364,7 +364,7 @@ export function ArtistSignupPage() {
                         placeholder="8文字以上"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        className="flex h-10 sm:h-12 w-full rounded-md border border-input bg-white px-3 py-1 text-sm sm:text-base transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                        className="flex h-10 sm:h-12 w-full rounded-md border border-gray-200 bg-gray-100 px-3 py-1 text-sm sm:text-base transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:bg-white focus-visible:border-primary disabled:cursor-not-allowed disabled:opacity-50"
                       />
                     </div>
 
@@ -380,7 +380,7 @@ export function ArtistSignupPage() {
                         placeholder="パスワードを再入力"
                         value={confirmPassword}
                         onChange={(e) => setConfirmPassword(e.target.value)}
-                        className="flex h-10 sm:h-12 w-full rounded-md border border-input bg-white px-3 py-1 text-sm sm:text-base transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                        className="flex h-10 sm:h-12 w-full rounded-md border border-gray-200 bg-gray-100 px-3 py-1 text-sm sm:text-base transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:bg-white focus-visible:border-primary disabled:cursor-not-allowed disabled:opacity-50"
                       />
                       {confirmPassword && password !== confirmPassword && (
                         <p className="text-xs sm:text-sm text-red-500">

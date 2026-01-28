@@ -134,7 +134,16 @@ export function CorporateSignupPage() {
   const isAddSpaceMode =
     searchParams.get("addSpace") === "true" || hashParams.get("addSpace") === "true";
 
-  const [currentStep, setCurrentStep] = useState(isAddSpaceMode ? 2 : 1);
+  // Always start at Step 2 if in addSpace mode
+  const [currentStep, setCurrentStep] = useState(() => {
+    // Check both searchParams and hash on initial render
+    const sp = new URLSearchParams(window.location.search);
+    const hash = window.location.hash || "";
+    const hashIdx = hash.indexOf("?");
+    const hashSearch = hashIdx >= 0 ? hash.slice(hashIdx + 1) : "";
+    const hp = new URLSearchParams(hashSearch);
+    return (sp.get("addSpace") === "true" || hp.get("addSpace") === "true") ? 2 : 1;
+  });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
@@ -323,11 +332,22 @@ export function CorporateSignupPage() {
 
   // If we are in addSpaceMode, always force step 2 (prevents accidentally returning to step 1)
   useEffect(() => {
-    if (isAddSpaceMode && currentStep !== 2) {
+    // Double-check addSpace mode from URL on mount and when location changes
+    const checkAddSpace = () => {
+      const sp = new URLSearchParams(window.location.search);
+      const hash = window.location.hash || "";
+      const hashIdx = hash.indexOf("?");
+      const hashSearch = hashIdx >= 0 ? hash.slice(hashIdx + 1) : "";
+      const hp = new URLSearchParams(hashSearch);
+      return sp.get("addSpace") === "true" || hp.get("addSpace") === "true";
+    };
+    
+    const shouldBeAddSpace = checkAddSpace();
+    if (shouldBeAddSpace && currentStep !== 2) {
       setCurrentStep(2);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAddSpaceMode, location.key]);
+  }, [isAddSpaceMode, location.key, currentStep]);
 
   // Restore Step1 basic info for addSpaceMode (users already entered Step1 before email verification)
   useEffect(() => {
@@ -973,7 +993,7 @@ export function CorporateSignupPage() {
 
         {/* フォーム */}
         <AnimatePresence mode="wait">
-          {currentStep === 1 && (
+          {currentStep === 1 && !isAddSpaceMode && (
             <motion.div
               key="step1"
               initial={{ opacity: 0, x: 20 }}

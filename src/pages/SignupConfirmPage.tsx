@@ -199,7 +199,10 @@ export function SignupConfirmPage() {
               className="flex flex-col sm:flex-row gap-4 justify-center"
             >
               <Button
-                onClick={() => navigate("/signup/corporate?addSpace=true")}
+                onClick={() => {
+                  // Ensure we navigate with the query parameter
+                  navigate("/signup/corporate?addSpace=true", { replace: false });
+                }}
                 className="bg-gradient-to-r from-[#C3A36D] to-[#D4B478] hover:opacity-90 px-8 py-6 text-lg"
               >
                 スペース登録へ進む

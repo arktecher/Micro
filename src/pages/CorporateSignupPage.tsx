@@ -161,7 +161,7 @@ export function CorporateSignupPage() {
   // 初回マウント時にsessionStorageからデータを復元
   useEffect(() => {
     const savedData = sessionStorage.getItem(SESSION_KEY);
-    if (savedData && !isAddSpaceMode) {
+    if (savedData) {
       try {
         const parsed = JSON.parse(savedData);
         setCompanyName(parsed.companyName || "");
@@ -172,7 +172,8 @@ export function CorporateSignupPage() {
         setPhone(parsed.phone || "");
         setPassword(parsed.password || "");
         setConfirmPassword(parsed.confirmPassword || "");
-        setCurrentStep(parsed.currentStep || 1);
+        // addSpace=true の場合は「スペース登録」から開始したいので Step=2 を優先
+        setCurrentStep(isAddSpaceMode ? 2 : (parsed.currentStep || 1));
 
         if (parsed.spaces) {
           setSpaces(
@@ -186,8 +187,11 @@ export function CorporateSignupPage() {
       } catch (error) {
         console.error("Failed to restore session data:", error);
       }
+    } else if (isAddSpaceMode) {
+      // savedData が無いが addSpace=true の場合も Step=2 で開始
+      setCurrentStep(2);
     }
-  }, []);
+  }, [isAddSpaceMode]);
 
   // フォームデータが変更されたらsessionStorageに保存
   useEffect(() => {
@@ -230,6 +234,10 @@ export function CorporateSignupPage() {
   // スペース追加モードの時、既存の会社情報を読み込む
   useEffect(() => {
     if (isAddSpaceMode) {
+      // 直前の「基本情報」が sessionStorage にある場合はそれを優先する
+      const savedData = sessionStorage.getItem(SESSION_KEY);
+      if (savedData) return;
+
       const savedSpaces = JSON.parse(
         localStorage.getItem("mgj_registered_spaces") || "[]"
       );

@@ -269,6 +269,10 @@ export function MyPage() {
   // 認証チェック：未ログインまたは購入者以外はリダイレクト
   useEffect(() => {
     if (!isAuthenticated) {
+      // Store current URL for redirect after login
+      const fullUrl = window.location.hash || window.location.pathname + window.location.search;
+      const redirectUrl = fullUrl.startsWith('#') ? fullUrl.slice(1) : fullUrl;
+      localStorage.setItem("mgj_redirect_after_login", redirectUrl);
       navigate("/login/customer");
       return;
     }

@@ -77,8 +77,11 @@ export function SignupPromptDialog({
   };
 
   const handleLogin = () => {
-    const currentPath = location.pathname;
-    localStorage.setItem("mgj_redirect_after_login", currentPath);
+    // Store full URL including hash and query params for HashRouter
+    const fullUrl = window.location.hash || window.location.pathname + window.location.search;
+    // Remove the leading # if present
+    const redirectUrl = fullUrl.startsWith('#') ? fullUrl.slice(1) : fullUrl;
+    localStorage.setItem("mgj_redirect_after_login", redirectUrl);
     localStorage.setItem("mgj_pending_favorite_artwork_id", artworkId);
     navigate("/login-selection");
   };

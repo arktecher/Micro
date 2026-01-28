@@ -897,26 +897,6 @@ export function CorporateSignupPage() {
       <Header />
 
       <div className="container mx-auto px-4 pt-16 sm:pt-20 md:pt-24 pb-6 sm:pb-8 max-w-4xl">
-        {/* スペース追加モードの戻るボタン */}
-        {isAddSpaceMode && (
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="mb-4 sm:mb-6"
-          >
-            <Button
-              variant="ghost"
-              onClick={() =>
-                navigate("/corporate-dashboard", { state: { openTab: "spaces" } })
-              }
-              className="gap-2"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              ダッシュボードに戻る
-            </Button>
-          </motion.div>
-        )}
-
         {/* ヘッダー */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -924,55 +904,57 @@ export function CorporateSignupPage() {
           className="text-center mb-6 sm:mb-8"
         >
           <h1 className="text-2xl sm:text-3xl md:text-4xl text-[#3A3A3A] mb-2 sm:mb-3">
-            {isAddSpaceMode
-              ? "新しいスペースを追加"
-              : "マイクロギャラリーを始める"}
+            マイクロギャラリーを始める
           </h1>
           <p className="text-sm sm:text-base text-gray-600">
-            {isAddSpaceMode
-              ? "別の場所にもアートを飾りましょう。"
-              : "あなたの空間を、アートが彩ります。"}
+            あなたの空間を、アートが彩ります。
           </p>
         </motion.div>
 
         {/* プログレスバー */}
-        {!isAddSpaceMode && (
-          <Card className="bg-white mb-6 sm:mb-8">
-            <CardContent className="pt-4 sm:pt-6 px-4 sm:px-6">
-              <div className="mb-4 sm:mb-6">
-                <div className="flex justify-between mb-2">
-                  <span className="text-xs sm:text-sm text-gray-600">
-                    ステップ {currentStep} / {STEPS.length}
-                  </span>
-                  <span className="text-xs sm:text-sm text-[#C3A36D]">
-                    {Math.round(progress)}%
-                  </span>
-                </div>
-                <Progress value={progress} className="h-2" />
+        <Card className="bg-white mb-6 sm:mb-8">
+          <CardContent className="pt-4 sm:pt-6 px-4 sm:px-6">
+            <div className="mb-4 sm:mb-6">
+              <div className="flex justify-between mb-2">
+                <span className="text-xs sm:text-sm text-gray-600">
+                  ステップ {currentStep} / {STEPS.length}
+                </span>
+                <span className="text-xs sm:text-sm text-[#C3A36D]">
+                  {Math.round(progress)}%
+                </span>
               </div>
+              <Progress value={progress} className="h-2" />
+            </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
-                {STEPS.map((step) => (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
+              {STEPS.map((step) => {
+                // When in addSpace mode and on step 2, mark step 1 as completed
+                const isCompleted = isAddSpaceMode && currentStep === 2 
+                  ? step.id < currentStep 
+                  : step.id < currentStep;
+                const isActive = step.id === currentStep;
+                
+                return (
                   <div
                     key={step.id}
                     className={`text-center transition-all ${
-                      step.id === currentStep
+                      isActive
                         ? "opacity-100"
-                        : step.id < currentStep
+                        : isCompleted
                         ? "opacity-70"
                         : "opacity-40"
                     }`}
                   >
                     <div
                       className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center mx-auto mb-2 transition-colors ${
-                        step.id < currentStep
+                        isCompleted
                           ? "bg-green-500 text-white"
-                          : step.id === currentStep
+                          : isActive
                           ? "bg-[#C3A36D] text-white"
                           : "bg-gray-200 text-gray-500"
                       }`}
                     >
-                      {step.id < currentStep ? (
+                      {isCompleted ? (
                         <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5" />
                       ) : (
                         <span className="text-sm sm:text-base">{step.id}</span>
@@ -985,11 +967,11 @@ export function CorporateSignupPage() {
                       {step.description}
                     </p>
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
 
         {/* フォーム */}
         <AnimatePresence mode="wait">
@@ -1286,7 +1268,7 @@ export function CorporateSignupPage() {
                             updateSpace(space.id, "facilityTypeOther", "");
                           }}
                         >
-                          <SelectTrigger className="h-11 sm:h-12 text-sm sm:text-base">
+                          <SelectTrigger className="h-11 sm:h-12 text-sm sm:text-base bg-gray-100 border-gray-200 focus:bg-white focus:border-primary">
                             <SelectValue placeholder="施設タイプを選択" />
                           </SelectTrigger>
                           <SelectContent>
@@ -1316,7 +1298,7 @@ export function CorporateSignupPage() {
                               )
                             }
                             placeholder="施設タイプを入力してください（例：美術館、図書館、など）"
-                            className="text-sm sm:text-base mt-2"
+                            className="text-sm sm:text-base mt-2 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
                             rows={2}
                           />
                         )}
@@ -1336,7 +1318,7 @@ export function CorporateSignupPage() {
                               updateSpace(space.id, "subTypeOther", "");
                             }}
                           >
-                            <SelectTrigger className="h-11 sm:h-12 text-sm sm:text-base">
+                            <SelectTrigger className="h-11 sm:h-12 text-sm sm:text-base bg-gray-100 border-gray-200 focus:bg-white focus:border-primary">
                               <SelectValue placeholder="場所を選択" />
                             </SelectTrigger>
                             <SelectContent>
@@ -1360,7 +1342,7 @@ export function CorporateSignupPage() {
                                 )
                               }
                               placeholder="具体的な場所を入力してください（例：屋上テラス、地下駐車場、など）"
-                              className="text-sm sm:text-base mt-2"
+                              className="text-sm sm:text-base mt-2 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
                               rows={2}
                             />
                           )}
@@ -1383,7 +1365,7 @@ export function CorporateSignupPage() {
                             updateSpace(space.id, "spaceName", e.target.value)
                           }
                           placeholder="例：1階エントランス、会議室A"
-                          className="h-11 sm:h-12 text-sm sm:text-base"
+                          className="h-11 sm:h-12 text-sm sm:text-base bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
                         />
                         <p className="text-xs text-gray-500">
                           後で管理しやすいように、わかりやすい名前を付けてください
@@ -1418,7 +1400,7 @@ export function CorporateSignupPage() {
                             updateSpace(space.id, "location", e.target.value)
                           }
                           placeholder="例：東京都渋谷区"
-                          className="h-11 sm:h-12 text-sm sm:text-base"
+                          className="h-11 sm:h-12 text-sm sm:text-base bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
                         />
                         <p className="text-xs text-gray-500">
                           会社住所と異なる場合のみ変更してください

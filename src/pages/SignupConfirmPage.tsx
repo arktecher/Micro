@@ -519,59 +519,134 @@ export function SignupConfirmPage() {
                 </>
               ) : (
                 <>
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                      <Mail className="w-5 h-5 text-primary" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-sm sm:text-base text-primary mb-1">確認メールのリンクをクリックしましたか？</p>
-                      <p className="text-xs sm:text-sm text-gray-600 leading-relaxed">
-                        {isConfirmed
-                          ? "確認が完了しました。次のステップへ進めます。"
-                          : "クリック後は、このページからログインしてください（確認済みのメールアドレスでログインできます）。"}
-                      </p>
-                    </div>
-                  </div>
+                  {role === "corporate" ? (
+                    <>
+                      <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                          <Mail className="w-5 h-5 text-primary" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm sm:text-base text-primary mb-1">確認メールのリンクをクリックしましたか？</p>
+                          <p className="text-xs sm:text-sm text-gray-600 leading-relaxed">
+                            {isConfirmed
+                              ? "メール確認が完了しました。次はスペース情報を登録してください。"
+                              : "メール確認が完了したら、自動的にログインされ、スペース登録ページへ進みます。スペース情報を登録することで、AIがあなたの空間に最適なアート作品を提案します。"}
+                          </p>
+                        </div>
+                      </div>
 
-                  <div className="flex flex-col sm:flex-row gap-3 pt-2">
-                    {isConfirmed && hasToken ? (
-                      <Button
-                        size="lg"
-                        onClick={() => navigate(nextPaths.dashboard)}
-                        className="bg-primary hover:bg-primary/90 text-white flex-1"
-                      >
-                        <span>ダッシュボードへ</span>
-                        <ArrowRight className="w-4 h-4 ml-2" />
-                      </Button>
-                    ) : (
-                      <Button
-                        size="lg"
-                        onClick={() => navigate(loginPath)}
-                        className="bg-primary hover:bg-primary/90 text-white flex-1"
-                      >
-                        <span>{role ? `${roleLabel}でログイン` : "ログインへ"}</span>
-                        <ArrowRight className="w-4 h-4 ml-2" />
-                      </Button>
-                    )}
-                    <Button
-                      size="lg"
-                      variant="outline"
-                      onClick={() => navigate(isConfirmed && hasToken ? nextPaths.profile : "/login-selection")}
-                      className="flex-1"
-                    >
-                      {isConfirmed && hasToken ? "プロフィールへ" : "ログイン選択へ"}
-                    </Button>
-                  </div>
+                      {isConfirmed && hasToken ? (
+                        <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                          <Button
+                            size="lg"
+                            onClick={() => navigate("/signup/corporate?addSpace=true")}
+                            className="bg-primary hover:bg-primary/90 text-white flex-1"
+                          >
+                            <span>スペース登録へ進む</span>
+                            <ArrowRight className="w-4 h-4 ml-2" />
+                          </Button>
+                          <Button
+                            size="lg"
+                            variant="outline"
+                            onClick={() => navigate("/corporate-dashboard")}
+                            className="flex-1"
+                          >
+                            後で登録する
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="pt-2">
+                          <p className="text-xs sm:text-sm text-gray-600 mb-3 leading-relaxed">
+                            確認メールのリンクをクリックすると、自動的にログインされ、スペース登録ページが表示されます。
+                          </p>
+                          <div className="flex flex-col sm:flex-row gap-3">
+                            <Button
+                              size="lg"
+                              onClick={() => navigate(loginPath)}
+                              className="bg-primary hover:bg-primary/90 text-white flex-1"
+                            >
+                              <span>法人でログイン</span>
+                              <ArrowRight className="w-4 h-4 ml-2" />
+                            </Button>
+                            <Button
+                              size="lg"
+                              variant="outline"
+                              onClick={() => navigate("/login-selection")}
+                              className="flex-1"
+                            >
+                              ログイン選択へ
+                            </Button>
+                          </div>
+                        </div>
+                      )}
 
-                  <div className="pt-4 border-t border-gray-100">
-                    <p className="text-xs sm:text-sm text-gray-500 leading-relaxed">
-                      メールが見つからない場合は、迷惑メールをご確認ください。<br />
-                      登録し直す場合は
-                      <Link to={signupPath} className="text-primary hover:underline ml-1">
-                        こちら
-                      </Link>
-                    </p>
-                  </div>
+                      <div className="pt-4 border-t border-gray-100">
+                        <p className="text-xs sm:text-sm text-gray-500 leading-relaxed">
+                          メールが見つからない場合は、迷惑メールをご確認ください。<br />
+                          登録し直す場合は
+                          <Link to={signupPath} className="text-primary hover:underline ml-1">
+                            こちら
+                          </Link>
+                        </p>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                          <Mail className="w-5 h-5 text-primary" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm sm:text-base text-primary mb-1">確認メールのリンクをクリックしましたか？</p>
+                          <p className="text-xs sm:text-sm text-gray-600 leading-relaxed">
+                            {isConfirmed
+                              ? "確認が完了しました。次のステップへ進めます。"
+                              : "クリック後は、このページからログインしてください（確認済みのメールアドレスでログインできます）。"}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                        {isConfirmed && hasToken ? (
+                          <Button
+                            size="lg"
+                            onClick={() => navigate(nextPaths.dashboard)}
+                            className="bg-primary hover:bg-primary/90 text-white flex-1"
+                          >
+                            <span>ダッシュボードへ</span>
+                            <ArrowRight className="w-4 h-4 ml-2" />
+                          </Button>
+                        ) : (
+                          <Button
+                            size="lg"
+                            onClick={() => navigate(loginPath)}
+                            className="bg-primary hover:bg-primary/90 text-white flex-1"
+                          >
+                            <span>{role ? `${roleLabel}でログイン` : "ログインへ"}</span>
+                            <ArrowRight className="w-4 h-4 ml-2" />
+                          </Button>
+                        )}
+                        <Button
+                          size="lg"
+                          variant="outline"
+                          onClick={() => navigate(isConfirmed && hasToken ? nextPaths.profile : "/login-selection")}
+                          className="flex-1"
+                        >
+                          {isConfirmed && hasToken ? "プロフィールへ" : "ログイン選択へ"}
+                        </Button>
+                      </div>
+
+                      <div className="pt-4 border-t border-gray-100">
+                        <p className="text-xs sm:text-sm text-gray-500 leading-relaxed">
+                          メールが見つからない場合は、迷惑メールをご確認ください。<br />
+                          登録し直す場合は
+                          <Link to={signupPath} className="text-primary hover:underline ml-1">
+                            こちら
+                          </Link>
+                        </p>
+                      </div>
+                    </>
+                  )}
                 </>
               )}
             </CardContent>

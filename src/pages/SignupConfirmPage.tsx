@@ -1,7 +1,7 @@
 import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, Link, useSearchParams } from "react-router-dom";
-import { CheckCircle, ArrowRight, Mail, AlertCircle, RefreshCw, Info, User, Sparkles } from "lucide-react";
+import { CheckCircle, ArrowRight, Mail, AlertCircle, RefreshCw, Info, User, Sparkles, Loader2 } from "lucide-react";
 
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
@@ -55,6 +55,7 @@ export function SignupConfirmPage() {
   const { isAuthenticated, userType, currentUser } = useAuth();
   const [searchParams] = useSearchParams();
   const [isCheckingAuth, setIsCheckingAuth] = useState(false);
+  const [redirectCountdown, setRedirectCountdown] = useState(2);
   const status = (searchParams.get("status") || "").toLowerCase();
   const errorType = searchParams.get("error_type") || "";
   const isConfirmed = status === "confirmed";
@@ -90,6 +91,27 @@ export function SignupConfirmPage() {
   const nextPaths = getNextPaths(role);
   const hasToken = Boolean(localStorage.getItem("mgj_access_token"));
   const isLoggedIn = isAuthenticated && hasToken;
+  const redirectUrl = localStorage.getItem("mgj_redirect_after_signup");
+
+  // Handle redirect countdown for customer role
+  useEffect(() => {
+    if (isConfirmed && isLoggedIn && role === "customer" && redirectUrl) {
+      const timer = setInterval(() => {
+        setRedirectCountdown((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            // Clean up redirect URL
+            localStorage.removeItem("mgj_redirect_after_signup");
+            // Navigate to original page
+            navigate(redirectUrl);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      return () => clearInterval(timer);
+    }
+  }, [isConfirmed, isLoggedIn, role, redirectUrl, navigate]);
 
   // Get signup path based on role
   const signupPath = useMemo(() => {
@@ -434,8 +456,84 @@ export function SignupConfirmPage() {
             </>
           )}
 
-          {/* Welcome Content for Corporate/Customer */}
-          {isConfirmed && isLoggedIn && role !== "artist" && (
+          {/* Welcome Content for Customer with Redirect */}
+          {isConfirmed && isLoggedIn && role === "customer" && redirectUrl && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="text-center"
+            >
+              <Card className="border-2 border-primary/20 bg-white">
+                <CardContent className="p-8 sm:p-10 md:p-12">
+                  <motion.div
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    transition={{ delay: 0.2, type: "spring" }}
+                    className="w-20 h-20 bg-gradient-to-br from-green-500 to-green-600 rounded-full flex items-center justify-center mx-auto mb-6"
+                  >
+                    <CheckCircle className="w-12 h-12 text-white" />
+                  </motion.div>
+                  <motion.h2
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.3 }}
+                    className="text-2xl sm:text-3xl text-primary mb-4"
+                  >
+                    メール確認ありがとうございます
+                  </motion.h2>
+                  <motion.p
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.4 }}
+                    className="text-base sm:text-lg text-gray-600 mb-6"
+                  >
+                    登録が完了しました。元のページに戻ります...
+                  </motion.p>
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: 0.5 }}
+                    className="flex items-center justify-center gap-2 text-sm text-gray-500"
+                  >
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>{redirectCountdown}秒後にリダイレクトします</span>
+                  </motion.div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
+
+          {/* Welcome Content for Customer without Redirect */}
+          {isConfirmed && isLoggedIn && role === "customer" && !redirectUrl && (
+            <Card className="border-2 border-primary/20 bg-white">
+              <CardContent className="p-5 sm:p-6 md:p-8">
+                <p className="text-sm sm:text-base text-gray-600 mb-4 leading-relaxed">
+                  登録が完了しました。次のステップへ進んでください。
+                </p>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <Button
+                    size="lg"
+                    onClick={() => navigate(nextPaths.dashboard)}
+                    className="bg-primary hover:bg-primary/90 text-white flex-1"
+                  >
+                    <span>ダッシュボードへ</span>
+                    <ArrowRight className="w-4 h-4 ml-2" />
+                  </Button>
+                  <Button
+                    size="lg"
+                    variant="outline"
+                    onClick={() => navigate(nextPaths.profile)}
+                    className="flex-1"
+                  >
+                    プロフィールへ
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Welcome Content for Corporate */}
+          {isConfirmed && isLoggedIn && role === "corporate" && (
             <Card className="border-2 border-primary/20 bg-white">
               <CardContent className="p-5 sm:p-6 md:p-8">
                 <p className="text-sm sm:text-base text-gray-600 mb-4 leading-relaxed">

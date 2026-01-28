@@ -67,8 +67,11 @@ export function SignupPromptDialog({
   }, [isOpen, onClose]);
 
   const handleSignup = () => {
-    const currentPath = location.pathname;
-    localStorage.setItem("mgj_redirect_after_signup", currentPath);
+    // Store full URL including hash and query params for HashRouter
+    const fullUrl = window.location.hash || window.location.pathname + window.location.search;
+    // Remove the leading # if present
+    const redirectUrl = fullUrl.startsWith('#') ? fullUrl.slice(1) : fullUrl;
+    localStorage.setItem("mgj_redirect_after_signup", redirectUrl);
     localStorage.setItem("mgj_pending_favorite_artwork_id", artworkId);
     navigate("/signup/customer");
   };

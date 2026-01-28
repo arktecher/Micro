@@ -1,7 +1,7 @@
 import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, Link, useSearchParams } from "react-router-dom";
-import { CheckCircle, ArrowRight, Mail, AlertCircle, RefreshCw, Info, User } from "lucide-react";
+import { CheckCircle, ArrowRight, Mail, AlertCircle, RefreshCw, Info, User, Sparkles } from "lucide-react";
 
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
@@ -52,7 +52,7 @@ function getNextPaths(role: SignupRole) {
 
 export function SignupConfirmPage() {
   const navigate = useNavigate();
-  const { isAuthenticated, userType } = useAuth();
+  const { isAuthenticated, userType, currentUser } = useAuth();
   const [searchParams] = useSearchParams();
   const [isCheckingAuth, setIsCheckingAuth] = useState(false);
   const status = (searchParams.get("status") || "").toLowerCase();
@@ -104,6 +104,131 @@ export function SignupConfirmPage() {
         return "/login-selection";
     }
   }, [role]);
+
+  // Corporate "signup complete" screen (match clone UI)
+  if (isConfirmed && isLoggedIn && role === "corporate") {
+    const emailForGreeting = currentUser?.email || "";
+
+    return (
+      <div className="min-h-screen bg-[#F8F6F1]">
+        <Header />
+
+        <section className="min-h-screen flex items-center justify-center px-4 pt-24 pb-16">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="max-w-2xl w-full text-center"
+          >
+            <motion.div
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{ delay: 0.2, type: "spring" }}
+              className="w-24 h-24 bg-gradient-to-br from-[#C3A36D] to-[#D4B478] rounded-full flex items-center justify-center mx-auto mb-8"
+            >
+              <CheckCircle className="w-12 h-12 text-white" />
+            </motion.div>
+
+            <motion.h1
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3 }}
+              className="text-4xl sm:text-5xl text-[#3A3A3A] mb-4"
+            >
+              🎉 サインアップ完了！
+            </motion.h1>
+
+            <motion.p
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.4 }}
+              className="text-xl text-gray-600 mb-8"
+            >
+              {emailForGreeting ? `${emailForGreeting}様、ようこそMicro Gallery Japanへ！` : "ようこそMicro Gallery Japanへ！"}
+            </motion.p>
+
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.5 }}
+              className="bg-white rounded-2xl p-8 mb-8 shadow-lg"
+            >
+              <div className="flex items-center justify-center gap-3 mb-6">
+                <Sparkles className="w-8 h-8 text-[#C3A36D]" />
+                <h2 className="text-2xl text-[#3A3A3A]">次のステップ</h2>
+              </div>
+              <p className="text-lg text-gray-700 mb-6">
+                あなたの空間を登録して、AIが最適なアート作品を提案します
+              </p>
+              <div className="grid gap-4 text-left">
+                <div className="flex items-start gap-3 p-4 bg-[#F8F6F1] rounded-lg">
+                  <div className="w-8 h-8 rounded-full bg-[#C3A36D] text-white flex items-center justify-center flex-shrink-0 mt-0.5">
+                    1
+                  </div>
+                  <div>
+                    <h3 className="text-[#3A3A3A] mb-1">スペース情報を登録</h3>
+                    <p className="text-sm text-gray-600">展示場所の写真と詳細を入力（2分で完了）</p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 p-4 bg-[#F8F6F1] rounded-lg">
+                  <div className="w-8 h-8 rounded-full bg-[#C3A36D] text-white flex items-center justify-center flex-shrink-0 mt-0.5">
+                    2
+                  </div>
+                  <div>
+                    <h3 className="text-[#3A3A3A] mb-1">AIが作品を提案</h3>
+                    <p className="text-sm text-gray-600">空間に合ったアート作品を自動でセレクト</p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 p-4 bg-[#F8F6F1] rounded-lg">
+                  <div className="w-8 h-8 rounded-full bg-[#C3A36D] text-white flex items-center justify-center flex-shrink-0 mt-0.5">
+                    3
+                  </div>
+                  <div>
+                    <h3 className="text-[#3A3A3A] mb-1">展示開始</h3>
+                    <p className="text-sm text-gray-600">作品が届き次第、すぐに展示・販売がスタート</p>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.6 }}
+              className="flex flex-col sm:flex-row gap-4 justify-center"
+            >
+              <Button
+                onClick={() => navigate("/signup/corporate?addSpace=true")}
+                className="bg-gradient-to-r from-[#C3A36D] to-[#D4B478] hover:opacity-90 px-8 py-6 text-lg"
+              >
+                スペース登録へ進む
+                <ArrowRight className="w-5 h-5 ml-2" />
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => navigate("/corporate-dashboard")}
+                className="px-8 py-6 text-lg"
+              >
+                後で登録する
+              </Button>
+            </motion.div>
+
+            <motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.7 }}
+              className="text-sm text-gray-500 mt-6"
+            >
+              スペース登録は後からダッシュボードで追加できます
+            </motion.p>
+          </motion.div>
+        </section>
+
+        <Footer />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-cream/30 via-white to-gray-50">

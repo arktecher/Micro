@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { toast } from "sonner";
 import {
   Building2,
@@ -45,6 +45,8 @@ import {
 } from "@/components/ui/select";
 import { RecaptchaBadge } from "@/components/common/RecaptchaBadge";
 import { api } from "@/lib/api";
+
+const CORPORATE_BASIC_INFO_STORAGE_KEY = "mgj_corporate_basic_info_pending";
 
 const STEPS = [
   { id: 1, title: "基本情報", description: "会社・担当者情報の入力" },
@@ -119,7 +121,18 @@ export function CorporateSignupPage() {
   const navigate = useNavigate();
   const { login } = useAuth();
   const [searchParams] = useSearchParams();
-  const isAddSpaceMode = searchParams.get("addSpace") === "true";
+  const location = useLocation();
+
+  // HashRouter safety: sometimes `useSearchParams()` can miss params embedded in the hash.
+  const hashSearch = (() => {
+    const hash = window.location.hash || "";
+    const idx = hash.indexOf("?");
+    return idx >= 0 ? hash.slice(idx + 1) : "";
+  })();
+  const hashParams = new URLSearchParams(hashSearch);
+
+  const isAddSpaceMode =
+    searchParams.get("addSpace") === "true" || hashParams.get("addSpace") === "true";
 
   const [currentStep, setCurrentStep] = useState(isAddSpaceMode ? 2 : 1);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -161,7 +174,7 @@ export function CorporateSignupPage() {
   // 初回マウント時にsessionStorageからデータを復元
   useEffect(() => {
     const savedData = sessionStorage.getItem(SESSION_KEY);
-    if (savedData) {
+    if (savedData && !isAddSpaceMode) {
       try {
         const parsed = JSON.parse(savedData);
         setCompanyName(parsed.companyName || "");
@@ -172,8 +185,7 @@ export function CorporateSignupPage() {
         setPhone(parsed.phone || "");
         setPassword(parsed.password || "");
         setConfirmPassword(parsed.confirmPassword || "");
-        // addSpace=true の場合は「スペース登録」から開始したいので Step=2 を優先
-        setCurrentStep(isAddSpaceMode ? 2 : (parsed.currentStep || 1));
+        setCurrentStep(parsed.currentStep || 1);
 
         if (parsed.spaces) {
           setSpaces(
@@ -187,11 +199,8 @@ export function CorporateSignupPage() {
       } catch (error) {
         console.error("Failed to restore session data:", error);
       }
-    } else if (isAddSpaceMode) {
-      // savedData が無いが addSpace=true の場合も Step=2 で開始
-      setCurrentStep(2);
     }
-  }, [isAddSpaceMode]);
+  }, []);
 
   // フォームデータが変更されたらsessionStorageに保存
   useEffect(() => {
@@ -234,10 +243,6 @@ export function CorporateSignupPage() {
   // スペース追加モードの時、既存の会社情報を読み込む
   useEffect(() => {
     if (isAddSpaceMode) {
-      // 直前の「基本情報」が sessionStorage にある場合はそれを優先する
-      const savedData = sessionStorage.getItem(SESSION_KEY);
-      if (savedData) return;
-
       const savedSpaces = JSON.parse(
         localStorage.getItem("mgj_registered_spaces") || "[]"
       );
@@ -316,6 +321,40 @@ export function CorporateSignupPage() {
     }
   }, [companyAddress]);
 
+  // If we are in addSpaceMode, always force step 2 (prevents accidentally returning to step 1)
+  useEffect(() => {
+    if (isAddSpaceMode && currentStep !== 2) {
+      setCurrentStep(2);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAddSpaceMode, location.key]);
+
+  // Restore Step1 basic info for addSpaceMode (users already entered Step1 before email verification)
+  useEffect(() => {
+    if (!isAddSpaceMode) return;
+    const raw = localStorage.getItem(CORPORATE_BASIC_INFO_STORAGE_KEY);
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw) as Partial<{
+        companyName: string;
+        postalCode: string;
+        companyAddress: string;
+        contactName: string;
+        email: string;
+        phone: string;
+      }>;
+      if (parsed.companyName) setCompanyName(parsed.companyName);
+      if (parsed.postalCode) setPostalCode(parsed.postalCode);
+      if (parsed.companyAddress) setCompanyAddress(parsed.companyAddress);
+      if (parsed.contactName) setContactName(parsed.contactName);
+      if (parsed.email) setEmail(parsed.email);
+      if (parsed.phone) setPhone(parsed.phone);
+    } catch {
+      // ignore invalid JSON
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAddSpaceMode]);
+
   const canProceedStep1 = true;
 
   const canProceedStep2 = true;
@@ -366,6 +405,18 @@ export function CorporateSignupPage() {
         // If email confirmation is enabled, Supabase returns no session/access_token.
         // In that case, do NOT log the user in yet.
         if (!response.access_token) {
+          // Persist Step1 info so after email confirmation we can open step2 directly
+          localStorage.setItem(
+            CORPORATE_BASIC_INFO_STORAGE_KEY,
+            JSON.stringify({
+              companyName,
+              postalCode,
+              companyAddress,
+              contactName,
+              email,
+              phone,
+            })
+          );
           toast.success("確認メールを送信しました", {
             description: "受信ボックスでメールを開き、確認を完了してください。",
           });
@@ -425,6 +476,11 @@ export function CorporateSignupPage() {
   };
 
   const handleBack = () => {
+    // In addSpace mode, step 1 should not be accessible after email confirmation.
+    if (isAddSpaceMode) {
+      navigate("/corporate-dashboard");
+      return;
+    }
     if (currentStep > 1) {
       setCurrentStep(currentStep - 1);
     }
@@ -1456,7 +1512,7 @@ export function CorporateSignupPage() {
                 <Button
                   variant="outline"
                   onClick={handleBack}
-                  disabled={currentStep === 1}
+                  disabled={isAddSpaceMode || currentStep === 1}
                   className="px-4 sm:px-6 h-10 sm:h-11"
                 >
                   <ArrowLeft className="w-4 h-4" />

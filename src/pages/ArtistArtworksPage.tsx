@@ -28,6 +28,9 @@ import { Badge } from "@/components/ui/badge";
 import { StyleTagsSection } from "@/components/common/StyleTagsSection";
 import { createImagePreviewUrl, isHeicFile } from "@/lib/heicConverter";
 import { toast } from "sonner";
+import { artworkService } from "@/services/artwork.service";
+import { useAuth } from "@/contexts/AuthContext";
+import { Loader2 } from "lucide-react";
 
 interface Artwork {
   id: string;
@@ -46,12 +49,8 @@ interface Artwork {
 
 export function ArtistArtworksPage() {
   const navigate = useNavigate();
-
-  // ページ遷移時に一番上にスクロール
-  useEffect(() => {
-    window.scrollTo(0, 0);
-  }, []);
-
+  const { isAuthenticated, userType, isInitialized } = useAuth();
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [artworks, setArtworks] = useState<Artwork[]>([
     {
       id: "1",
@@ -68,11 +67,30 @@ export function ArtistArtworksPage() {
       styleTags: [],
     },
   ]);
-
   // Store preview URLs for each file (key: artworkId-fileIndex, value: preview URL)
   const [previewUrls, setPreviewUrls] = useState<Map<string, string>>(new Map());
   // Store loading states for preview URLs (key: artworkId-fileIndex)
   const [loadingPreviews, setLoadingPreviews] = useState<Set<string>>(new Set());
+
+  // ページ遷移時に一番上にスクロール
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
+  // 認証チェック
+  useEffect(() => {
+    if (!isInitialized) return;
+    
+    if (!isAuthenticated || userType !== "artist") {
+      toast.error("このページはアーティスト専用です");
+      navigate("/login/artist");
+    }
+  }, [isAuthenticated, userType, isInitialized, navigate]);
+
+  // Don't render if not initialized or not authenticated
+  if (!isInitialized || !isAuthenticated || userType !== "artist") {
+    return null;
+  }
 
   // 年のリストを生成（1950年から現在まで）
   const currentYear = new Date().getFullYear();
@@ -231,18 +249,89 @@ export function ArtistArtworksPage() {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Artwork registration data:", artworks);
 
-    // Check if user has already agreed to terms
-    const hasAgreed = localStorage.getItem("mgj_artist_terms_agreed");
-    if (hasAgreed === "true") {
-      // User has already agreed, skip contract page and go directly to artwork selection
-      navigate("/artwork-selection");
-    } else {
-      // User hasn't agreed yet, show contract page
-      navigate("/signup/artist/contract");
+    // Validate all artworks
+    const errors: string[] = [];
+    artworks.forEach((artwork, index) => {
+      if (!artwork.name.trim()) {
+        errors.push(`作品${index + 1}: 作品名を入力してください`);
+      }
+      if (!artwork.price || parseFloat(artwork.price) <= 0) {
+        errors.push(`作品${index + 1}: 販売価格を正しく入力してください`);
+      }
+      if (!artwork.width || parseFloat(artwork.width) <= 0) {
+        errors.push(`作品${index + 1}: 幅を入力してください`);
+      }
+      if (!artwork.height || parseFloat(artwork.height) <= 0) {
+        errors.push(`作品${index + 1}: 高さを入力してください`);
+      }
+      if (!artwork.year) {
+        errors.push(`作品${index + 1}: 制作年を選択してください`);
+      }
+      if (!artwork.theme.trim()) {
+        errors.push(`作品${index + 1}: 作品の説明を入力してください`);
+      }
+      if (artwork.files.length === 0) {
+        errors.push(`作品${index + 1}: 少なくとも1枚の画像をアップロードしてください`);
+      }
+    });
+
+    if (errors.length > 0) {
+      toast.error(errors[0]);
+      if (errors.length > 1) {
+        console.error("Validation errors:", errors);
+      }
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      // Create all artworks
+      const createdArtworks = [];
+      for (let i = 0; i < artworks.length; i++) {
+        const artwork = artworks[i];
+
+        // Create artwork via API
+        const created = await artworkService.createArtwork(
+          {
+            title: artwork.name,
+            story: artwork.theme,
+            price: parseFloat(artwork.price),
+            dimensions: {
+              width: parseFloat(artwork.width),
+              height: parseFloat(artwork.height),
+              depth: artwork.depth ? parseFloat(artwork.depth) : undefined,
+            },
+            year: artwork.year ? parseInt(artwork.year) : undefined,
+            has_frame: artwork.hasFrame,
+          },
+          artwork.files
+        );
+        
+        createdArtworks.push(created);
+      }
+
+      toast.success(`${createdArtworks.length}件の作品を登録しました`);
+
+      // Check if user has already agreed to terms
+      const hasAgreed = localStorage.getItem("mgj_artist_terms_agreed");
+      if (hasAgreed === "true") {
+        // User has already agreed, skip contract page and go directly to artwork selection
+        navigate("/artwork-selection");
+      } else {
+        // User hasn't agreed yet, show contract page
+        navigate("/signup/artist/contract");
+      }
+    } catch (error: any) {
+      console.error("Error creating artworks:", error);
+      toast.error(
+        error.message || "作品の登録に失敗しました。もう一度お試しください。"
+      );
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -519,7 +608,7 @@ export function ArtistArtworksPage() {
                           <div className="space-y-2">
                             <Label
                               htmlFor={`name-${artwork.id}`}
-                              className="text-sm sm:text-base"
+                              className="text-sm"
                             >
                               作品名 <span className="text-accent">*</span>
                             </Label>
@@ -535,14 +624,14 @@ export function ArtistArtworksPage() {
                                   e.target.value
                                 )
                               }
-                              className="h-10 sm:h-12 bg-white text-sm sm:text-base"
+                              className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary text-sm sm:text-base"
                             />
                           </div>
 
                           <div className="space-y-2">
                             <Label
                               htmlFor={`price-${artwork.id}`}
-                              className="text-sm sm:text-base"
+                              className="text-sm"
                             >
                               販売価格（円）{" "}
                               <span className="text-accent">*</span>
@@ -559,7 +648,7 @@ export function ArtistArtworksPage() {
                                   e.target.value
                                 )
                               }
-                              className="h-10 sm:h-12 bg-white text-sm sm:text-base"
+                              className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary text-sm sm:text-base"
                             />
                           </div>
                         </div>
@@ -595,7 +684,7 @@ export function ArtistArtworksPage() {
                                     e.target.value
                                   )
                                 }
-                                className="h-10 sm:h-12 bg-white text-sm sm:text-base"
+                                className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary text-sm sm:text-base"
                               />
                             </div>
 
@@ -619,7 +708,7 @@ export function ArtistArtworksPage() {
                                     e.target.value
                                   )
                                 }
-                                className="h-10 sm:h-12 bg-white text-sm sm:text-base"
+                                className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary text-sm sm:text-base"
                               />
                             </div>
 
@@ -643,7 +732,7 @@ export function ArtistArtworksPage() {
                                     e.target.value
                                   )
                                 }
-                                className="h-10 sm:h-12 bg-white text-sm sm:text-base"
+                                className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary text-sm sm:text-base"
                               />
                               <p className="text-xs text-gray-500">
                                 ※ 平面作品の場合は空欄可
@@ -656,7 +745,7 @@ export function ArtistArtworksPage() {
                           <div className="space-y-2">
                             <Label
                               htmlFor={`year-${artwork.id}`}
-                              className="text-sm sm:text-base"
+                              className="text-sm"
                             >
                               制作年 <span className="text-accent">*</span>
                             </Label>
@@ -666,7 +755,7 @@ export function ArtistArtworksPage() {
                                 updateArtwork(artwork.id, "year", value)
                               }
                             >
-                              <SelectTrigger className="h-10 sm:h-12 bg-white text-sm sm:text-base">
+                              <SelectTrigger className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary text-sm sm:text-base">
                                 <SelectValue placeholder="年を選択" />
                               </SelectTrigger>
                               <SelectContent>
@@ -680,7 +769,7 @@ export function ArtistArtworksPage() {
                           </div>
 
                           <div className="space-y-2">
-                            <Label className="text-sm sm:text-base">
+                            <Label className="text-sm">
                               額装 <span className="text-accent">*</span>
                             </Label>
                             <div className="flex items-center gap-4 h-10 sm:h-12">
@@ -736,7 +825,7 @@ export function ArtistArtworksPage() {
                         <div className="space-y-2">
                           <Label
                             htmlFor={`theme-${artwork.id}`}
-                            className="text-sm sm:text-base"
+                            className="text-sm"
                           >
                             作品の説明 <span className="text-accent">*</span>
                           </Label>
@@ -747,7 +836,7 @@ export function ArtistArtworksPage() {
                             onChange={(e) =>
                               updateArtwork(artwork.id, "theme", e.target.value)
                             }
-                            className="min-h-[120px] sm:min-h-[150px] bg-white resize-y text-sm sm:text-base"
+                            className="min-h-[120px] sm:min-h-[150px] bg-gray-100 border-gray-200 focus:bg-white focus:border-primary resize-none text-sm sm:text-base"
                           />
                           <p className="text-xs text-gray-500">
                             作品を見る人に伝えたいことを、あなたの言葉で書いてみてください
@@ -958,10 +1047,20 @@ export function ArtistArtworksPage() {
               <Button
                 type="submit"
                 size="lg"
-                className="w-full sm:w-auto sm:min-w-[300px] h-12 sm:h-14 bg-primary hover:bg-primary/90 text-base sm:text-lg mx-auto flex items-center justify-center gap-2"
+                className="w-full sm:w-auto sm:min-w-[300px] h-12 sm:h-14 bg-primary hover:bg-primary/90 text-base sm:text-lg mx-auto flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isSubmitting}
               >
-                <span>登録して次へ進む</span>
-                <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />
+                    <span>登録中...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>登録して次へ進む</span>
+                    <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
+                  </>
+                )}
               </Button>
             </motion.div>
           </form>

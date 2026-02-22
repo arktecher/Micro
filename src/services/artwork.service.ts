@@ -109,16 +109,31 @@ export const artworkService = {
   async createArtwork(data: CreateArtworkRequest, images: File[]): Promise<Artwork> {
     const formData = new FormData();
     
-    // Add artwork data
-    Object.entries(data).forEach(([key, value]) => {
-      if (value !== undefined) {
-        if (typeof value === 'object') {
-          formData.append(key, JSON.stringify(value));
-        } else {
-          formData.append(key, String(value));
-        }
+    // Add artwork data - backend expects individual fields, not nested objects
+    if (data.title !== undefined) formData.append("title", data.title);
+    if (data.description !== undefined) formData.append("description", data.description);
+    if (data.story !== undefined) formData.append("story", data.story);
+    if (data.price !== undefined) formData.append("price", String(data.price));
+    if (data.lease_price !== undefined) formData.append("lease_price", String(data.lease_price));
+    
+    // Dimensions as separate fields (backend expects width, height, depth as Form fields)
+    if (data.dimensions) {
+      formData.append("width", String(data.dimensions.width));
+      formData.append("height", String(data.dimensions.height));
+      if (data.dimensions.depth !== undefined) {
+        formData.append("depth", String(data.dimensions.depth));
       }
-    });
+    }
+    
+    if (data.size_class !== undefined) formData.append("size_class", data.size_class);
+    if (data.year !== undefined) formData.append("year", String(data.year));
+    if (data.medium !== undefined) formData.append("medium", data.medium);
+    if (data.support !== undefined) formData.append("support", data.support);
+    if (data.weight !== undefined) formData.append("weight", String(data.weight));
+    if (data.has_frame !== undefined) formData.append("has_frame", String(data.has_frame));
+    if (data.coating !== undefined) formData.append("coating", data.coating);
+    if (data.packaging_info !== undefined) formData.append("packaging_info", data.packaging_info);
+    if (data.maintenance_info !== undefined) formData.append("maintenance_info", data.maintenance_info);
 
     // Add images
     images.forEach((file) => {

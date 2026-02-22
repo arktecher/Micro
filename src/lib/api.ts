@@ -37,7 +37,62 @@ export const api = {
     
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: "エラーが発生しました" }));
-      throw new Error(error.detail || error.message || `エラーが発生しました。ステータスコード: ${response.status}`);
+      
+      // Handle validation errors (detail is an array) or simple errors (detail is a string)
+      let errorMessage = "エラーが発生しました";
+      
+      if (error.detail) {
+        if (Array.isArray(error.detail)) {
+          // Validation errors: extract messages from each error object
+          const fieldNames: Record<string, string> = {
+            email: "メールアドレス",
+            password: "パスワード",
+            name: "名前",
+            title: "タイトル",
+            price: "価格",
+            body: "入力内容",
+          };
+          
+          errorMessage = error.detail
+            .map((err: any) => {
+              // Get field name (last item in loc array)
+              const fieldKey = err.loc && err.loc.length > 0 
+                ? err.loc[err.loc.length - 1] 
+                : "入力";
+              
+              // Translate field name to Japanese
+              const fieldName = fieldNames[fieldKey] || fieldKey;
+              
+              // Extract error message
+              let msg = err.msg || err.message || "無効な値です";
+              
+              // Clean up common validation messages
+              if (msg.includes("not a valid email address")) {
+                msg = "有効なメールアドレスを入力してください";
+              } else if (msg.includes("not a valid")) {
+                msg = "無効な値です";
+              } else if (msg.includes("required")) {
+                msg = "必須項目です";
+              } else if (msg.includes("too short")) {
+                msg = "文字数が不足しています";
+              } else if (msg.includes("too long")) {
+                msg = "文字数が多すぎます";
+              }
+              
+              return `${fieldName}: ${msg}`;
+            })
+            .join("\n");
+        } else {
+          // Simple error: detail is a string
+          errorMessage = error.detail;
+        }
+      } else if (error.message) {
+        errorMessage = error.message;
+      } else {
+        errorMessage = `エラーが発生しました。ステータスコード: ${response.status}`;
+      }
+      
+      throw new Error(errorMessage);
     }
     
     return response.json();
@@ -114,7 +169,49 @@ export const api = {
     
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: "ファイルのアップロードに失敗しました" }));
-      throw new Error(error.detail || error.message || `ファイルのアップロードに失敗しました。ステータスコード: ${response.status}`);
+      
+      // Handle validation errors (detail is an array) or simple errors (detail is a string)
+      let errorMessage = "ファイルのアップロードに失敗しました";
+      
+      if (error.detail) {
+        if (Array.isArray(error.detail)) {
+          // Validation errors: extract messages from each error object
+          const fieldNames: Record<string, string> = {
+            file: "ファイル",
+            images: "画像",
+            body: "入力内容",
+          };
+          
+          errorMessage = error.detail
+            .map((err: any) => {
+              const fieldKey = err.loc && err.loc.length > 0 
+                ? err.loc[err.loc.length - 1] 
+                : "入力";
+              
+              const fieldName = fieldNames[fieldKey] || fieldKey;
+              let msg = err.msg || err.message || "無効な値です";
+              
+              // Clean up common validation messages
+              if (msg.includes("not a valid")) {
+                msg = "無効な値です";
+              } else if (msg.includes("required")) {
+                msg = "必須項目です";
+              }
+              
+              return `${fieldName}: ${msg}`;
+            })
+            .join("\n");
+        } else {
+          // Simple error: detail is a string
+          errorMessage = error.detail;
+        }
+      } else if (error.message) {
+        errorMessage = error.message;
+      } else {
+        errorMessage = `ファイルのアップロードに失敗しました。ステータスコード: ${response.status}`;
+      }
+      
+      throw new Error(errorMessage);
     }
     
     return response.json();

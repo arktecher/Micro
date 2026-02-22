@@ -38,6 +38,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { ArtistReturnRequestDialog } from "@/components/ArtistReturnRequestDialog";
+import { artistService, type ArtistProfile } from "@/services/artist.service";
+import { userService } from "@/services/user.service";
+import { toast } from "sonner";
 
 // モックデータ
 const mockStats = {
@@ -196,17 +199,44 @@ const statusConfig = {
 export function ArtistDashboard() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { isAuthenticated, userType } = useAuth();
+  const { isAuthenticated, userType, isInitialized } = useAuth();
   const [selectedTab, setSelectedTab] = useState("dashboard");
   const [artworkFilter, setArtworkFilter] = useState<string>("all");
   const [isSavingProfile, setIsSavingProfile] = useState(false);
-  const [profileSaved, setProfileSaved] = useState(false);
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [returnRequestDialogOpen, setReturnRequestDialogOpen] = useState(false);
   const [selectedArtworkForReturn, setSelectedArtworkForReturn] = useState<any>(null);
+  
+  // Profile state
+  const [profileData, setProfileData] = useState<ArtistProfile | null>(null);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(false);
+  const [profileFormData, setProfileFormData] = useState({
+    name: "",
+    phone_number: "",
+    biography: "",
+    career: "",
+    instagram: "",
+    website: "",
+  });
+  // Track original profile data to detect changes
+  const [originalProfileData, setOriginalProfileData] = useState({
+    name: "",
+    phone_number: "",
+    biography: "",
+    career: "",
+    instagram: "",
+    website: "",
+  });
+  const [userProfile, setUserProfile] = useState<any>(null);
 
   // 認証チェック：未ログインまたはアーティスト以外はリダイレクト
+  // Wait for auth initialization before checking
   useEffect(() => {
+    // Don't check auth until initialization is complete
+    if (!isInitialized) {
+      return;
+    }
+
     if (!isAuthenticated) {
       navigate("/login/artist");
       return;
@@ -217,7 +247,7 @@ export function ArtistDashboard() {
       navigate("/");
       return;
     }
-  }, [isAuthenticated, userType, navigate]);
+  }, [isAuthenticated, userType, isInitialized, navigate]);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -258,35 +288,155 @@ export function ArtistDashboard() {
     return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
 
-  // プロフィール保存成功メッセージを3秒後に非表示
+  // Check if profile has changes
+  const hasProfileChanges = () => {
+    return (
+      profileFormData.name !== originalProfileData.name ||
+      profileFormData.phone_number !== originalProfileData.phone_number ||
+      profileFormData.biography !== originalProfileData.biography ||
+      profileFormData.career !== originalProfileData.career ||
+      profileFormData.instagram !== originalProfileData.instagram ||
+      profileFormData.website !== originalProfileData.website
+    );
+  };
+
+  // Load profile data when profile tab is selected
   useEffect(() => {
-    if (profileSaved) {
-      const timer = setTimeout(() => {
-        setProfileSaved(false);
-      }, 3000);
-      return () => clearTimeout(timer);
+    if (selectedTab === "profile" && isAuthenticated) {
+      loadProfileData();
     }
-  }, [profileSaved]);
+  }, [selectedTab, isAuthenticated]);
+
+  // Load profile data from backend
+  const loadProfileData = async () => {
+    setIsLoadingProfile(true);
+    try {
+      // Load artist profile
+      const artistProfile = await artistService.getProfile();
+      setProfileData(artistProfile);
+      
+      // Parse career history from array to text
+      const careerText = artistProfile.career_history
+        ? artistProfile.career_history.map((entry) => `${entry.year} ${entry.content}`).join("\n")
+        : "";
+      
+      const formData = {
+        name: artistProfile.name || "",
+        phone_number: artistProfile.phone_number || "",
+        biography: artistProfile.biography || "",
+        career: careerText,
+        instagram: "",
+        website: "",
+      };
+      
+      // Load user profile for SNS links
+      try {
+        const user = await userService.getCurrentUser();
+        setUserProfile(user);
+        formData.instagram = (user as any).instagram || "";
+        formData.website = (user as any).website || "";
+      } catch (err) {
+        console.warn("Failed to load user profile for SNS links:", err);
+      }
+      
+      // Set form data and original data (for change detection)
+      setProfileFormData(formData);
+      setOriginalProfileData({ ...formData });
+      
+      // Set profile image
+      if (artistProfile.profile_image_url) {
+        setProfileImage(artistProfile.profile_image_url);
+      }
+    } catch (error: any) {
+      console.error("Failed to load profile:", error);
+      toast.error("プロフィールの読み込みに失敗しました");
+    } finally {
+      setIsLoadingProfile(false);
+    }
+  };
 
   // プロフィール写真の変更
-  const handleProfileImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleProfileImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       if (!file.type.startsWith("image/")) {
-        alert("画像ファイルを選択してください");
+        toast.error("画像ファイルを選択してください");
         return;
       }
 
       if (file.size > 5 * 1024 * 1024) {
-        alert("ファイルサイズは5MB以下にしてください");
+        toast.error("ファイルサイズは5MB以下にしてください");
         return;
       }
 
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setProfileImage(reader.result as string);
+      try {
+        setIsSavingProfile(true);
+        // Upload profile image
+        const result = await userService.uploadProfileImage(file);
+        setProfileImage(result.profile_image_url);
+        toast.success("プロフィール写真を更新しました");
+        
+        // Reload profile data to get updated image URL
+        await loadProfileData();
+      } catch (error: any) {
+        console.error("Failed to upload profile image:", error);
+        toast.error("プロフィール写真のアップロードに失敗しました");
+      } finally {
+        setIsSavingProfile(false);
+      }
+    }
+  };
+
+  // Save profile changes
+  const handleSaveProfile = async () => {
+    try {
+      setIsSavingProfile(true);
+      
+      // Parse career text into array format
+      const careerHistory = profileFormData.career
+        ? profileFormData.career
+            .split("\n")
+            .filter((line) => line.trim())
+            .map((line) => {
+              // Try to extract year from line (format: "YYYY content" or "YYYY年 content")
+              const yearMatch = line.match(/^(\d{4})/);
+              const year = yearMatch ? yearMatch[1] : new Date().getFullYear().toString();
+              const content = line.replace(/^\d{4}年?\s*/, "").trim();
+              return { year, content: content || line.trim() };
+            })
+        : [];
+      
+      // Update artist profile
+      const updatedProfile = await artistService.updateProfile({
+        name: profileFormData.name,
+        biography: profileFormData.biography,
+        career_history: careerHistory,
+        phone_number: profileFormData.phone_number,
+      });
+      
+      // Update SNS links via user service
+      // Always send instagram and website (even if empty) to allow clearing fields
+      const snsUpdates: any = {
+        instagram: profileFormData.instagram?.trim() || "",
+        website: profileFormData.website?.trim() || "",
       };
-      reader.readAsDataURL(file);
+      
+      try {
+        await userService.updateProfile(snsUpdates);
+      } catch (err) {
+        console.warn("Failed to update SNS links:", err);
+        toast.error("SNSリンクの更新に失敗しました");
+      }
+      
+      // Reload profile data to get updated values (including SNS links)
+      await loadProfileData();
+      
+      toast.success("プロフィールを保存しました");
+    } catch (error: any) {
+      console.error("Failed to save profile:", error);
+      toast.error("プロフィールの保存に失敗しました");
+    } finally {
+      setIsSavingProfile(false);
     }
   };
 
@@ -315,7 +465,7 @@ export function ArtistDashboard() {
           className="mb-6 sm:mb-8"
         >
           <h1 className="text-2xl sm:text-3xl md:text-4xl text-[#3A3A3A] mb-2 sm:mb-3">
-            {mockProfile.name}さんのマイページ
+            {profileData?.name || profileFormData.name || "アーティスト"}さんのマイページ
           </h1>
           <p className="text-sm sm:text-base md:text-lg text-gray-600 flex items-center gap-2 flex-wrap">
             <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-[#C3A36D] flex-shrink-0" />
@@ -711,169 +861,229 @@ export function ArtistDashboard() {
                   あなたのプロフィールは、法人ギャラリーに紹介される情報です。<br />
                   更新するとすぐに反映されます。
                 </p>
+                {profileData && (
+                  <div className="mt-2">
+                    <Progress value={profileData.profile_completion} className="h-2" />
+                    <p className="text-xs text-gray-500 mt-1">
+                      プロフィール完成度: {profileData.profile_completion}%
+                    </p>
+                  </div>
+                )}
               </CardHeader>
               <CardContent className="space-y-6">
-                {/* プロフィール写真 */}
-                <div>
-                  <Label>プロフィール写真</Label>
-                  <div className="flex items-center gap-4 mt-2">
-                    <div className="w-24 h-24 bg-gradient-to-br from-gray-100 to-gray-200 rounded-full flex items-center justify-center">
-                      {profileImage ? (
-                        <img src={profileImage} alt="プロフィール" className="w-24 h-24 rounded-full" />
-                      ) : (
-                        <User className="w-12 h-12 text-gray-400" />
-                      )}
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => document.getElementById("profileImageInput")?.click()}
-                    >
-                      <ImageIcon className="w-4 h-4" />
-                      <span>写真を変更</span>
-                    </Button>
-                    <input
-                      type="file"
-                      id="profileImageInput"
-                      className="hidden"
-                      accept="image/*"
-                      onChange={handleProfileImageChange}
-                    />
+                {isLoadingProfile ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Clock className="w-6 h-6 animate-spin text-[#C3A36D]" />
+                    <span className="ml-2 text-gray-600">読み込み中...</span>
                   </div>
-                </div>
-
-                <Separator />
-
-                {/* 名前 */}
-                <div className="space-y-2">
-                  <Label htmlFor="name">名前（公開名）</Label>
-                  <Input id="name" defaultValue={mockProfile.name} />
-                </div>
-
-                {/* 生年月日 */}
-                <div className="space-y-2">
-                  <Label htmlFor="birthDate">生年月日（非公開）</Label>
-                  <Input id="birthDate" type="date" defaultValue={mockProfile.birthDate} className="bg-gray-50" />
-                  <p className="text-xs text-gray-500">生年月日は公開されません</p>
-                </div>
-
-                {/* メールアドレス */}
-                <div className="space-y-2">
-                  <Label htmlFor="email">メールアドレス（非公開）</Label>
-                  <Input id="email" type="email" defaultValue={mockProfile.email} disabled className="bg-gray-50" />
-                  <p className="text-xs text-gray-500">メールアドレスは公開されません</p>
-                </div>
-
-                {/* 電話番号 */}
-                <div className="space-y-2">
-                  <Label htmlFor="phone">電話番号（非公開）</Label>
-                  <Input id="phone" type="tel" defaultValue={mockProfile.phone} className="bg-gray-50" />
-                  <p className="text-xs text-gray-500">電話番号は公開されません</p>
-                </div>
-
-                {/* 自己紹介 */}
-                <div className="space-y-2">
-                  <Label htmlFor="bio">自己紹介文</Label>
-                  <Textarea
-                    id="bio"
-                    rows={4}
-                    defaultValue={mockProfile.bio}
-                    placeholder="あなたの作品について、制作のテーマやこだわりを教えてください"
-                  />
-                </div>
-
-                {/* 経歴 */}
-                <div className="space-y-2">
-                  <Label htmlFor="career">経歴・展示歴</Label>
-                  <Textarea
-                    id="career"
-                    rows={4}
-                    defaultValue={mockProfile.career}
-                    placeholder="学歴、受賞歴、個展・グループ展の経歴など"
-                  />
-                </div>
-
-                <Separator />
-
-                {/* SNSリンク */}
-                <div className="space-y-4">
-                  <h3 className="text-lg text-[#3A3A3A]">SNS・Webサイト</h3>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="instagram">Instagram</Label>
-                    <div className="flex gap-2">
-                      <Input id="instagram" defaultValue={mockProfile.instagram} placeholder="@username" />
-                      <Button variant="outline" size="icon">
-                        <ExternalLink className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="twitter">X (Twitter)</Label>
-                    <div className="flex gap-2">
-                      <Input id="twitter" defaultValue={mockProfile.twitter} placeholder="@username" />
-                      <Button variant="outline" size="icon">
-                        <ExternalLink className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="website">Webサイト</Label>
-                    <div className="flex gap-2">
-                      <Input id="website" defaultValue={mockProfile.website} placeholder="https://" />
-                      <Button variant="outline" size="icon">
-                        <ExternalLink className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-
-                <Separator />
-
-                {/* 銀行口座情報 */}
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-lg text-[#3A3A3A]">銀行口座情報</h3>
-                    <Badge variant="outline" className="text-xs">
-                      非公開
-                    </Badge>
-                  </div>
-                  <p className="text-sm text-gray-600">
-                    作品の売上金を受け取る口座情報です。この情報は公開されません。
-                  </p>
-                  <Button variant="outline" onClick={() => navigate("/bank-account-edit")}>
-                    <Edit className="w-4 h-4" />
-                    <span>口座情報を編集</span>
-                  </Button>
-                </div>
-
-                {/* 保存ボタン */}
-                <div className="flex gap-3 pt-4">
-                  <Button
-                    className="bg-gradient-to-r from-[#C3A36D] to-[#D4B478] hover:opacity-90 flex-1"
-                    onClick={() => {
-                      setIsSavingProfile(true);
-                      setTimeout(() => {
-                        setIsSavingProfile(false);
-                        setProfileSaved(true);
-                      }, 1000);
-                    }}
-                    disabled={isSavingProfile}
-                  >
-                    {isSavingProfile ? (
-                      <div className="flex items-center">
-                        <Clock className="w-4 h-4 animate-spin" />
-                        <span>保存中...</span>
+                ) : (
+                  <>
+                    {/* プロフィール写真 */}
+                    <div>
+                      <Label>プロフィール写真</Label>
+                      <div className="flex items-center gap-4 mt-2">
+                        <div className="w-24 h-24 bg-gradient-to-br from-gray-100 to-gray-200 rounded-full flex items-center justify-center overflow-hidden">
+                          {profileImage ? (
+                            <img src={profileImage} alt="プロフィール" className="w-24 h-24 rounded-full object-cover" />
+                          ) : (
+                            <User className="w-12 h-12 text-gray-400" />
+                          )}
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => document.getElementById("profileImageInput")?.click()}
+                          disabled={isSavingProfile}
+                        >
+                          <ImageIcon className="w-4 h-4" />
+                          <span>写真を変更</span>
+                        </Button>
+                        <input
+                          type="file"
+                          id="profileImageInput"
+                          className="hidden"
+                          accept="image/*"
+                          onChange={handleProfileImageChange}
+                          disabled={isSavingProfile}
+                        />
                       </div>
-                    ) : (
-                      "変更を保存"
-                    )}
-                  </Button>
-                  <Button variant="outline">キャンセル</Button>
-                </div>
-                {profileSaved && <p className="text-sm text-green-500 mt-2">プロフィールを保存しました</p>}
+                    </div>
+
+                    <Separator />
+
+                    {/* 名前 */}
+                    <div className="space-y-2">
+                      <Label htmlFor="name" className="text-sm">名前（公開名）</Label>
+                      <Input
+                        id="name"
+                        value={profileFormData.name}
+                        onChange={(e) => setProfileFormData({ ...profileFormData, name: e.target.value })}
+                        className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
+                      />
+                    </div>
+
+                    {/* メールアドレス */}
+                    <div className="space-y-2">
+                      <Label htmlFor="email" className="text-sm">メールアドレス（非公開）</Label>
+                      <Input
+                        id="email"
+                        type="email"
+                        value={profileData?.email || ""}
+                        disabled
+                        className="h-11 bg-gray-100 border-gray-200"
+                      />
+                      <p className="text-xs text-gray-500">メールアドレスは公開されません</p>
+                    </div>
+
+                    {/* 電話番号 */}
+                    <div className="space-y-2">
+                      <Label htmlFor="phone" className="text-sm">電話番号（非公開）</Label>
+                      <Input
+                        id="phone"
+                        type="tel"
+                        value={profileFormData.phone_number}
+                        onChange={(e) => setProfileFormData({ ...profileFormData, phone_number: e.target.value })}
+                        className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
+                      />
+                      <p className="text-xs text-gray-500">電話番号は公開されません</p>
+                    </div>
+
+                    {/* 自己紹介 */}
+                    <div className="space-y-2">
+                      <Label htmlFor="bio" className="text-sm">自己紹介文</Label>
+                      <Textarea
+                        id="bio"
+                        rows={4}
+                        value={profileFormData.biography}
+                        onChange={(e) => setProfileFormData({ ...profileFormData, biography: e.target.value })}
+                        placeholder="あなたの作品について、制作のテーマやこだわりを教えてください"
+                        className="bg-gray-100 border-gray-200 focus:bg-white focus:border-primary resize-none"
+                      />
+                    </div>
+
+                    {/* 経歴 */}
+                    <div className="space-y-2">
+                      <Label htmlFor="career" className="text-sm">経歴・展示歴</Label>
+                      <Textarea
+                        id="career"
+                        rows={4}
+                        value={profileFormData.career}
+                        onChange={(e) => setProfileFormData({ ...profileFormData, career: e.target.value })}
+                        placeholder="学歴、受賞歴、個展・グループ展の経歴など（例：2020年 東京藝術大学卒業）"
+                        className="bg-gray-100 border-gray-200 focus:bg-white focus:border-primary resize-none"
+                      />
+                      <p className="text-xs text-gray-500">1行に1つの経歴を記載してください（例：2020年 東京藝術大学卒業）</p>
+                    </div>
+
+                    <Separator />
+
+                    {/* SNSリンク */}
+                    <div className="space-y-4">
+                      <h3 className="text-lg text-[#3A3A3A]">SNS・Webサイト</h3>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="instagram" className="text-sm">Instagram</Label>
+                        <div className="flex gap-2">
+                          <Input
+                            id="instagram"
+                            value={profileFormData.instagram}
+                            onChange={(e) => setProfileFormData({ ...profileFormData, instagram: e.target.value })}
+                            placeholder="@username"
+                            className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
+                          />
+                          {profileFormData.instagram && (
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              onClick={() => {
+                                const url = profileFormData.instagram.startsWith("http")
+                                  ? profileFormData.instagram
+                                  : `https://instagram.com/${profileFormData.instagram.replace("@", "")}`;
+                                window.open(url, "_blank");
+                              }}
+                            >
+                              <ExternalLink className="w-4 h-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="website" className="text-sm">Webサイト</Label>
+                        <div className="flex gap-2">
+                          <Input
+                            id="website"
+                            value={profileFormData.website}
+                            onChange={(e) => setProfileFormData({ ...profileFormData, website: e.target.value })}
+                            placeholder="https://"
+                            className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
+                          />
+                          {profileFormData.website && (
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              onClick={() => {
+                                const url = profileFormData.website.startsWith("http")
+                                  ? profileFormData.website
+                                  : `https://${profileFormData.website}`;
+                                window.open(url, "_blank");
+                              }}
+                            >
+                              <ExternalLink className="w-4 h-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <Separator />
+
+                    {/* 銀行口座情報 */}
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-lg text-[#3A3A3A]">銀行口座情報</h3>
+                        <Badge variant="outline" className="text-xs">
+                          非公開
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-gray-600">
+                        作品の売上金を受け取る口座情報です。この情報は公開されません。
+                      </p>
+                      <Button variant="outline" onClick={() => navigate("/bank-account-edit")}>
+                        <Edit className="w-4 h-4" />
+                        <span>口座情報を編集</span>
+                      </Button>
+                    </div>
+
+                    {/* 保存ボタン */}
+                    <div className="flex gap-3 pt-4">
+                      <Button
+                        className="bg-gradient-to-r from-[#C3A36D] to-[#D4B478] hover:opacity-90 flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                        onClick={handleSaveProfile}
+                        disabled={isSavingProfile || !hasProfileChanges()}
+                      >
+                        {isSavingProfile ? (
+                          <div className="flex items-center">
+                            <Clock className="w-4 h-4 animate-spin" />
+                            <span>保存中...</span>
+                          </div>
+                        ) : (
+                          "変更を保存"
+                        )}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          // Reload profile data to reset form
+                          loadProfileData();
+                        }}
+                        disabled={isSavingProfile || !hasProfileChanges()}
+                      >
+                        キャンセル
+                      </Button>
+                    </div>
+                  </>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

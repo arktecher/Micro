@@ -20,12 +20,18 @@ const SAMPLE_ARTWORKS = [
 
 export function FavoritesPage() {
   const navigate = useNavigate();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isInitialized } = useAuth();
   const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
   const [favoriteArtworks, setFavoriteArtworks] = useState<typeof SAMPLE_ARTWORKS>([]);
 
   // ログインチェック
+  // Wait for auth initialization before checking
   useEffect(() => {
+    // Don't check auth until initialization is complete
+    if (!isInitialized) {
+      return;
+    }
+
     if (!isAuthenticated) {
       // Store current URL for redirect after login
       const fullUrl = window.location.hash || window.location.pathname + window.location.search;
@@ -33,7 +39,7 @@ export function FavoritesPage() {
       localStorage.setItem("mgj_redirect_after_login", redirectUrl);
       navigate("/login-selection");
     }
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated, isInitialized, navigate]);
 
   // お気に入り一覧を取得
   useEffect(() => {
@@ -63,7 +69,8 @@ export function FavoritesPage() {
     navigate(`/purchase/${artworkId}`);
   };
 
-  if (!isAuthenticated) {
+  // Show nothing while initializing or if not authenticated
+  if (!isInitialized || !isAuthenticated) {
     return null;
   }
 

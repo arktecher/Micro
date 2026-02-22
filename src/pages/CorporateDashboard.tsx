@@ -431,31 +431,32 @@ const notifications = [
 export function CorporateDashboard() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { isAuthenticated, userType } = useAuth();
+  const { isAuthenticated, userType, isInitialized } = useAuth();
   const [activeTab, setActiveTab] = useState("dashboard");
   const [sortBy, setSortBy] = useState("views");
   const [timePeriod, setTimePeriod] = useState("week");
   
   // 認証チェック：未ログインまたは法人以外はリダイレクト
+  // Wait for auth initialization before checking
   useEffect(() => {
-    // 初期レンダリング時の状態読み込みを待つため、少し遅延
-    const timer = setTimeout(() => {
-      if (!isAuthenticated) {
-        // 未ログインの場合、ログインページへ
-        navigate("/login/corporate");
-        return;
-      }
-      
-      if (userType !== "corporate") {
-        // 法人以外（購入者・アーティスト）の場合、ホームへ
-        toast.error("このページは法人専用です");
-        navigate("/");
-        return;
-      }
-    }, 50); // 50ms待機
+    // Don't check auth until initialization is complete
+    if (!isInitialized) {
+      return;
+    }
+
+    if (!isAuthenticated) {
+      // 未ログインの場合、ログインページへ
+      navigate("/login/corporate");
+      return;
+    }
     
-    return () => clearTimeout(timer);
-  }, [isAuthenticated, userType, navigate]);
+    if (userType !== "corporate") {
+      // 法人以外（購入者・アーティスト）の場合、ホームへ
+      toast.error("このページは法人専用です");
+      navigate("/");
+      return;
+    }
+  }, [isAuthenticated, userType, isInitialized, navigate]);
   
   // AI推薦ダイアログの状態
   const [aiDialogOpen, setAiDialogOpen] = useState(false);

@@ -260,14 +260,20 @@ function RecommendedCarousel({ artworks }: { artworks: any[] }) {
 
 export function MyPage() {
   const navigate = useNavigate();
-  const { isAuthenticated, userType } = useAuth();
+  const { isAuthenticated, userType, isInitialized } = useAuth();
   const [profileData, setProfileData] = useState(mockUser);
   const [shippingData, setShippingData] = useState(mockShippingAddress);
   const [favoriteArtworks, setFavoriteArtworks] = useState(mockFavoriteArtworks);
   const location = useLocation();
 
   // 認証チェック：未ログインまたは購入者以外はリダイレクト
+  // Wait for auth initialization before checking
   useEffect(() => {
+    // Don't check auth until initialization is complete
+    if (!isInitialized) {
+      return;
+    }
+
     if (!isAuthenticated) {
       // Store current URL for redirect after login
       const fullUrl = window.location.hash || window.location.pathname + window.location.search;
@@ -282,7 +288,7 @@ export function MyPage() {
       navigate("/");
       return;
     }
-  }, [isAuthenticated, userType, navigate]);
+  }, [isAuthenticated, userType, isInitialized, navigate]);
 
   // URLハッシュが #favorites の場合、お気に入りタブをアクティブにする
   const [activeTab, setActiveTab] = useState("profile");

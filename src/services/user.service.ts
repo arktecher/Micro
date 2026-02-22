@@ -24,10 +24,14 @@ export interface UserProfile {
 
 export interface UpdateProfileRequest {
   name?: string;
-  phone_number?: string;
+  phone?: string;  // Backend uses 'phone', not 'phone_number'
+  phone_number?: string;  // Keep for backward compatibility, will be mapped
   address?: string;
   postal_code?: string;
-  biography?: string;
+  bio?: string;  // Backend uses 'bio' for artists
+  biography?: string;  // Keep for backward compatibility
+  website?: string;  // For artists
+  instagram?: string;  // For artists
   company_name?: string;
   company_address?: string;
   company_postal_code?: string;

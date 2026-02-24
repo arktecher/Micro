@@ -50,6 +50,7 @@ interface Artwork {
 export function ArtistArtworksPage() {
   const navigate = useNavigate();
   const { isAuthenticated, userType, isInitialized } = useAuth();
+  
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [artworks, setArtworks] = useState<Artwork[]>([
     {
@@ -72,6 +73,12 @@ export function ArtistArtworksPage() {
   // Store loading states for preview URLs (key: artworkId-fileIndex)
   const [loadingPreviews, setLoadingPreviews] = useState<Set<string>>(new Set());
 
+  // Check for token synchronously (not in state to avoid race conditions)
+  const checkToken = () => {
+    if (typeof window === "undefined") return false;
+    return !!localStorage.getItem("mgj_access_token");
+  };
+
   // ページ遷移時に一番上にスクロール
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -81,24 +88,20 @@ export function ArtistArtworksPage() {
   useEffect(() => {
     if (!isInitialized) return;
     
-    if (!isAuthenticated || userType !== "artist") {
+    // Check token synchronously
+    const hasToken = checkToken();
+    
+    // Allow access if user has token (during signup flow) or is authenticated as artist
+    const canAccess = hasToken || (isAuthenticated && userType === "artist");
+    
+    if (!canAccess) {
       toast.error("このページはアーティスト専用です");
       navigate("/login/artist");
     }
   }, [isAuthenticated, userType, isInitialized, navigate]);
 
-  // Don't render if not initialized or not authenticated
-  if (!isInitialized || !isAuthenticated || userType !== "artist") {
-    return null;
-  }
-
-  // 年のリストを生成（1950年から現在まで）
-  const currentYear = new Date().getFullYear();
-  const years = Array.from({ length: currentYear - 1949 }, (_, i) =>
-    (currentYear - i).toString()
-  );
-
   // クリーンアップ: ファイルプレビューのURLを解放
+  // IMPORTANT: This hook must be called BEFORE any conditional returns to follow Rules of Hooks
   useEffect(() => {
     return () => {
       previewUrls.forEach((url) => {
@@ -106,6 +109,41 @@ export function ArtistArtworksPage() {
       });
     };
   }, [previewUrls]);
+
+  // Show loading state while auth is initializing
+  if (!isInitialized) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-cream/30 via-white to-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">読み込み中...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Check token synchronously for render decision
+  const hasToken = checkToken();
+  
+  // Allow access if user has token (signup flow) or is authenticated as artist
+  // Only block if no token AND not authenticated
+  if (!hasToken && (!isAuthenticated || userType !== "artist")) {
+    // Show loading while redirect happens (useEffect will handle redirect)
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-cream/30 via-white to-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">リダイレクト中...</p>
+        </div>
+      </div>
+    );
+  }
+  
+  // 年のリストを生成（1950年から現在まで）
+  const currentYear = new Date().getFullYear();
+  const years = Array.from({ length: currentYear - 1949 }, (_, i) =>
+    (currentYear - i).toString()
+  );
 
   const addArtwork = () => {
     const newId = (artworks.length + 1).toString();
@@ -256,25 +294,25 @@ export function ArtistArtworksPage() {
     const errors: string[] = [];
     artworks.forEach((artwork, index) => {
       if (!artwork.name.trim()) {
-        errors.push(`作品${index + 1}: 作品名を入力してください`);
+        errors.push("作品名を入力してください");
       }
       if (!artwork.price || parseFloat(artwork.price) <= 0) {
-        errors.push(`作品${index + 1}: 販売価格を正しく入力してください`);
+        errors.push("販売価格を正しく入力してください");
       }
       if (!artwork.width || parseFloat(artwork.width) <= 0) {
-        errors.push(`作品${index + 1}: 幅を入力してください`);
+        errors.push("幅を入力してください");
       }
       if (!artwork.height || parseFloat(artwork.height) <= 0) {
-        errors.push(`作品${index + 1}: 高さを入力してください`);
+        errors.push("高さを入力してください");
       }
       if (!artwork.year) {
-        errors.push(`作品${index + 1}: 制作年を選択してください`);
+        errors.push("制作年を選択してください");
       }
       if (!artwork.theme.trim()) {
-        errors.push(`作品${index + 1}: 作品の説明を入力してください`);
+        errors.push("作品の説明を入力してください");
       }
       if (artwork.files.length === 0) {
-        errors.push(`作品${index + 1}: 少なくとも1枚の画像をアップロードしてください`);
+        errors.push("少なくとも1枚の画像をアップロードしてください");
       }
     });
 
@@ -386,14 +424,9 @@ export function ArtistArtworksPage() {
                 transition={{ duration: 0.5, delay: index * 0.1 }}
               >
                 <Card className="shadow-xl border-2 relative">
-                  {/* 作品番号と削除ボタン */}
-                  <div className="absolute top-4 right-4 sm:top-6 sm:right-6 flex items-center gap-2 sm:gap-3 z-10">
-                    <div className="px-2 sm:px-4 py-1 sm:py-2 bg-primary/10 rounded-full">
-                      <span className="text-xs sm:text-sm text-primary">
-                        作品 {index + 1}
-                      </span>
-                    </div>
-                    {artworks.length > 1 && (
+                  {/* 削除ボタン */}
+                  {artworks.length > 1 && (
+                    <div className="absolute top-4 right-4 sm:top-6 sm:right-6 z-10">
                       <Button
                         type="button"
                         variant="ghost"
@@ -403,10 +436,10 @@ export function ArtistArtworksPage() {
                       >
                         <X className="w-4 h-4 sm:w-5 sm:h-5" />
                       </Button>
-                    )}
-                  </div>
+                    </div>
+                  )}
 
-                  <CardHeader className="border-b bg-gradient-to-r from-gray-50 to-white pr-20 sm:pr-32 pt-4 sm:pt-6 pb-3 sm:pb-4 px-4 sm:px-6">
+                  <CardHeader className="border-b bg-gradient-to-r from-gray-50 to-white pt-4 sm:pt-6 pb-3 sm:pb-4 px-4 sm:px-6">
                     <CardTitle className="text-lg sm:text-xl md:text-2xl">
                       作品情報
                     </CardTitle>

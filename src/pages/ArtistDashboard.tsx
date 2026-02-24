@@ -40,6 +40,7 @@ import { Separator } from "@/components/ui/separator";
 import { ArtistReturnRequestDialog } from "@/components/ArtistReturnRequestDialog";
 import { artistService, type ArtistProfile } from "@/services/artist.service";
 import { userService } from "@/services/user.service";
+import { artworkService, type Artwork as ArtworkAPI } from "@/services/artwork.service";
 import { toast } from "sonner";
 
 // モックデータ
@@ -194,18 +195,40 @@ const statusConfig = {
     borderColor: "border-gray-200",
     textColor: "text-gray-700",
   },
+  recalled: {
+    label: "回収済み",
+    color: "bg-gray-500",
+    bgColor: "bg-gray-50",
+    borderColor: "border-gray-200",
+    textColor: "text-gray-700",
+  },
 };
 
 export function ArtistDashboard() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { isAuthenticated, userType, isInitialized } = useAuth();
-  const [selectedTab, setSelectedTab] = useState("dashboard");
+  const { isAuthenticated, userType, isInitialized, currentUser } = useAuth();
+  // Initialize tab from URL hash, default to "dashboard"
+  const getInitialTab = (): string => {
+    const hash = window.location.hash;
+    const parts = hash.split("#").filter(p => p.length > 0);
+    if (parts.length > 1) {
+      const tabHash = parts[parts.length - 1];
+      if (["dashboard", "artworks", "profile", "revenue"].includes(tabHash)) {
+        return tabHash;
+      }
+    }
+    return "dashboard";
+  };
+
+  const [selectedTab, setSelectedTab] = useState(getInitialTab());
   const [artworkFilter, setArtworkFilter] = useState<string>("all");
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [returnRequestDialogOpen, setReturnRequestDialogOpen] = useState(false);
   const [selectedArtworkForReturn, setSelectedArtworkForReturn] = useState<any>(null);
+  const [artworks, setArtworks] = useState<any[]>([]);
+  const [isLoadingArtworks, setIsLoadingArtworks] = useState(false);
   
   // Profile state
   const [profileData, setProfileData] = useState<ArtistProfile | null>(null);
@@ -253,40 +276,70 @@ export function ArtistDashboard() {
     window.scrollTo(0, 0);
   }, [selectedTab]);
 
-  // URLハッシュに基づいてタブを設定
-  useEffect(() => {
-    const hash = location.hash.replace("#", "");
-    if (hash === "profile") {
-      setSelectedTab("profile");
-    } else if (hash === "artworks") {
-      setSelectedTab("artworks");
-    } else if (hash === "dashboard") {
-      setSelectedTab("dashboard");
-    } else if (hash === "revenue") {
-      setSelectedTab("revenue");
+  // Extract tab hash from URL (handles #/dashboard#profile format)
+  const getTabFromHash = (): string => {
+    const hash = window.location.hash;
+    // Check if there's a nested hash (e.g., #/dashboard#profile)
+    // Split by # and get the last part (the tab name)
+    const parts = hash.split("#").filter(p => p.length > 0);
+    if (parts.length > 1) {
+      // Last part is the tab hash (after the route hash)
+      const tabHash = parts[parts.length - 1];
+      if (["dashboard", "artworks", "profile", "revenue"].includes(tabHash)) {
+        return tabHash;
+      }
     }
+    // Default to dashboard if no valid hash found
+    return "dashboard";
+  };
+
+  // URLハッシュに基づいてタブを設定（初期化時とlocation変更時）
+  useEffect(() => {
+    const tab = getTabFromHash();
+    setSelectedTab(tab);
+    
+    // If no tab hash exists, set default "dashboard" hash
+    const currentHash = window.location.hash;
+    const parts = currentHash.split("#").filter(p => p.length > 0);
+    const hasTabHash = parts.length > 1 && ["dashboard", "artworks", "profile", "revenue"].includes(parts[parts.length - 1]);
+    
+    if (!hasTabHash) {
+      const routeHash = parts.length > 0 ? `#${parts.join("#")}` : "#/dashboard";
+      window.history.replaceState(null, "", `${routeHash}#dashboard`);
+    }
+    
     window.scrollTo(0, 0);
   }, [location]);
 
   // ハッシュが変更されたときにもタブを切り替える
   useEffect(() => {
     const handleHashChange = () => {
-      const hash = window.location.hash.replace("#", "");
-      if (hash === "profile") {
-        setSelectedTab("profile");
-      } else if (hash === "artworks") {
-        setSelectedTab("artworks");
-      } else if (hash === "dashboard") {
-        setSelectedTab("dashboard");
-      } else if (hash === "revenue") {
-        setSelectedTab("revenue");
-      }
+      const tab = getTabFromHash();
+      setSelectedTab(tab);
       window.scrollTo(0, 0);
     };
 
     window.addEventListener("hashchange", handleHashChange);
     return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
+
+  // Handle tab change and update URL hash
+  const handleTabChange = (value: string) => {
+    setSelectedTab(value);
+    // Update URL hash while preserving the route hash
+    const currentHash = window.location.hash;
+    // Split by # and keep all parts except the last one (which is the tab)
+    const parts = currentHash.split("#").filter(p => p.length > 0);
+    // Remove the last part if it's a valid tab name
+    if (parts.length > 1 && ["dashboard", "artworks", "profile", "revenue"].includes(parts[parts.length - 1])) {
+      parts.pop();
+    }
+    // Reconstruct hash with route + new tab
+    const routeHash = parts.length > 0 ? `#${parts.join("#")}` : "#/dashboard";
+    // Update hash using replaceState to avoid adding to history
+    window.history.replaceState(null, "", `${routeHash}#${value}`);
+    window.scrollTo(0, 0);
+  };
 
   // Check if profile has changes
   const hasProfileChanges = () => {
@@ -306,6 +359,59 @@ export function ArtistDashboard() {
       loadProfileData();
     }
   }, [selectedTab, isAuthenticated]);
+
+  // Load artworks when artworks tab is selected
+  useEffect(() => {
+    if (selectedTab === "artworks" && isAuthenticated && currentUser?.id) {
+      loadArtworks();
+    }
+  }, [selectedTab, isAuthenticated, currentUser]);
+
+  // Load artworks from backend
+  const loadArtworks = async () => {
+    if (!currentUser?.id) {
+      console.warn("Cannot load artworks: user ID not available");
+      return;
+    }
+
+    setIsLoadingArtworks(true);
+    try {
+      // Fetch all artworks for the current artist (no status filter to get all)
+      const response = await artworkService.listArtworks({
+        page: 1,
+        page_size: 100, // Get all artworks
+        artist_id: currentUser.id, // Filter by current artist
+      });
+
+      // Map API response to match the expected format
+      const mappedArtworks = response.items.map((artwork: ArtworkAPI) => ({
+        id: artwork.id,
+        name: artwork.title,
+        status: artwork.status,
+        price: Number(artwork.price),
+        location: undefined, // Will be populated from space assignments later
+        scans: artwork.view_count || 0,
+        exhibitStart: undefined, // Will be populated from space assignments later
+        hasImage: !!artwork.main_image_url,
+        isVideo: false, // Can be determined from image URL or file type later
+        tags: [], // Can be populated from style tags later
+        buyer: undefined, // Will be populated from orders later
+        soldDate: undefined, // Will be populated from orders later
+        paymentStatus: undefined, // Will be populated from orders later
+        exhibitEnd: undefined, // Will be populated from space assignments later
+        main_image_url: artwork.main_image_url,
+        custom_id: artwork.custom_id,
+      }));
+
+      setArtworks(mappedArtworks);
+    } catch (error: any) {
+      console.error("Failed to load artworks:", error);
+      toast.error("作品の読み込みに失敗しました");
+      setArtworks([]);
+    } finally {
+      setIsLoadingArtworks(false);
+    }
+  };
 
   // Load profile data from backend
   const loadProfileData = async () => {
@@ -442,10 +548,16 @@ export function ArtistDashboard() {
 
   const filteredArtworks =
     artworkFilter === "all"
-      ? mockArtworks
-      : mockArtworks.filter((a) => a.status === artworkFilter);
+      ? artworks
+      : artworks.filter((a) => {
+          // Map "returned" filter to "recalled" status
+          if (artworkFilter === "returned") {
+            return a.status === "recalled";
+          }
+          return a.status === artworkFilter;
+        });
 
-  const exhibitedArtworks = mockArtworks.filter((a) => a.status === "exhibited");
+  const exhibitedArtworks = artworks.filter((a) => a.status === "exhibited");
 
   const handleRequestReturn = (artwork: any, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -476,7 +588,7 @@ export function ArtistDashboard() {
         </motion.div>
 
         {/* メインタブ */}
-        <Tabs value={selectedTab} onValueChange={setSelectedTab} className="w-full">
+        <Tabs value={selectedTab} onValueChange={handleTabChange} className="w-full">
           <div className="mb-6 sm:mb-8 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
             <TabsList className="grid w-full grid-cols-4 sm:grid-cols-4 min-w-[600px] sm:min-w-0 bg-white p-1 rounded-2xl shadow-sm">
               <TabsTrigger
@@ -728,8 +840,16 @@ export function ArtistDashboard() {
             </Card>
 
             {/* 作品グリッド */}
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredArtworks.map((artwork, index) => {
+            {isLoadingArtworks ? (
+              <Card className="bg-white">
+                <CardContent className="py-16 text-center">
+                  <Clock className="w-8 h-8 animate-spin text-[#C3A36D] mx-auto mb-4" />
+                  <p className="text-gray-600">作品を読み込み中...</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredArtworks.map((artwork, index) => {
                 const config = statusConfig[artwork.status as keyof typeof statusConfig];
                 return (
                   <motion.div
@@ -744,14 +864,14 @@ export function ArtistDashboard() {
                       onClick={() => navigate(`/artwork-edit/${artwork.id}`)}
                     >
                       {/* 作品画像 */}
-                      <div className="aspect-square bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center relative">
+                      <div className="aspect-square bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center relative overflow-hidden">
                         {/* ステータスバッジを右上に統一 */}
                         <div className="absolute top-4 right-4 z-10 flex flex-col gap-2 items-end">
                           <Badge className={`${config.color} text-white border-0 shadow-md`}>
                             {config.label}
                           </Badge>
                           {/* QRスキャン数バッジ */}
-                          {artwork.scans !== undefined && (
+                          {artwork.scans !== undefined && artwork.scans > 0 && (
                             <Badge variant="outline" className="bg-white/95 border-gray-300 shadow-sm">
                               <QrCode className="w-3 h-3 mr-1" />
                               {artwork.scans}回
@@ -759,7 +879,24 @@ export function ArtistDashboard() {
                           )}
                         </div>
 
-                        {artwork.isVideo ? (
+                        {artwork.main_image_url ? (
+                          <img
+                            src={artwork.main_image_url}
+                            alt={artwork.name}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              // Fallback to icon if image fails to load
+                              const target = e.target as HTMLImageElement;
+                              target.style.display = "none";
+                              const parent = target.parentElement;
+                              if (parent) {
+                                const icon = document.createElement("div");
+                                icon.innerHTML = `<svg class="w-20 h-20 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>`;
+                                parent.appendChild(icon);
+                              }
+                            }}
+                          />
+                        ) : artwork.isVideo ? (
                           <Video className="w-20 h-20 text-gray-300" strokeWidth={1.5} />
                         ) : (
                           <ImageIcon className="w-20 h-20 text-gray-300" strokeWidth={1.5} />
@@ -829,9 +966,10 @@ export function ArtistDashboard() {
                   </motion.div>
                 );
               })}
-            </div>
+              </div>
+            )}
 
-            {filteredArtworks.length === 0 && (
+            {!isLoadingArtworks && filteredArtworks.length === 0 && (
               <Card className="bg-white">
                 <CardContent className="py-16 text-center">
                   <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />

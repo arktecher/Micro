@@ -444,18 +444,18 @@ export function CorporateDashboard() {
       return;
     }
 
-    if (!isAuthenticated) {
-      // 未ログインの場合、ログインページへ
-      navigate("/login/corporate");
-      return;
-    }
-    
-    if (userType !== "corporate") {
-      // 法人以外（購入者・アーティスト）の場合、ホームへ
-      toast.error("このページは法人専用です");
-      navigate("/");
-      return;
-    }
+      if (!isAuthenticated) {
+        // 未ログインの場合、ログインページへ
+        navigate("/login/corporate");
+        return;
+      }
+      
+      if (userType !== "corporate") {
+        // 法人以外（購入者・アーティスト）の場合、ホームへ
+        toast.error("このページは法人専用です");
+        navigate("/");
+        return;
+      }
   }, [isAuthenticated, userType, isInitialized, navigate]);
   
   // AI推薦ダイアログの状態

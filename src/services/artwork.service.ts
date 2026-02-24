@@ -4,6 +4,14 @@
  */
 import { api } from "@/lib/api";
 
+export interface ArtworkImage {
+  id: string;
+  image_url: string;
+  image_order: number;
+  is_main: boolean;
+  alt_text?: string;
+}
+
 export interface Artwork {
   id: string;
   custom_id: string;
@@ -14,6 +22,7 @@ export interface Artwork {
   lease_price?: number;
   status: "draft" | "published" | "exhibited" | "sold" | "recalled";
   main_image_url?: string;
+  images?: ArtworkImage[];
   artist_id: string;
   artist?: {
     id: string;
@@ -34,6 +43,8 @@ export interface Artwork {
   coating?: string;
   packaging_info?: string;
   maintenance_info?: string;
+  style_tags?: string[];  // Array of style tag strings
+  is_ai_generated?: boolean;
   dominant_color?: string;
   created_at: string;
   published_at?: string;
@@ -41,10 +52,11 @@ export interface Artwork {
 }
 
 export interface ArtworkListResponse {
-  artworks: Artwork[];
+  items: Artwork[]; // Backend returns 'items' not 'artworks'
   total: number;
   page: number;
   page_size: number;
+  total_pages?: number;
 }
 
 export interface CreateArtworkRequest {
@@ -67,6 +79,11 @@ export interface CreateArtworkRequest {
   coating?: string;
   packaging_info?: string;
   maintenance_info?: string;
+  style_tags?: string[];  // Array of style tag strings
+  is_ai_generated?: boolean;
+  main_image_url?: string;
+  new_image_urls?: string[]; // URLs of newly uploaded images to add
+  delete_image_ids?: string[]; // IDs of images to delete
 }
 
 export const artworkService = {
@@ -183,5 +200,33 @@ export const artworkService = {
    */
   async removeFromFavorites(artworkId: string): Promise<{ message: string }> {
     return api.delete(`/artworks/${artworkId}/favorite`);
+  },
+
+  /**
+   * Get exhibition/assignment information for an artwork
+   */
+  async getExhibitionInfo(artworkId: string): Promise<{
+    is_exhibited: boolean;
+    assignment: {
+      id: string;
+      status: string;
+      display_start_date?: string;
+      display_end_date?: string;
+      exhibition_days: number;
+      space: {
+        id?: string;
+        name?: string;
+        address?: string;
+      };
+      corporate: {
+        company_name?: string;
+        contact_name?: string;
+        contact_email?: string;
+        contact_phone?: string;
+      };
+      qr_scan_count: number;
+    } | null;
+  }> {
+    return api.get(`/artworks/${artworkId}/exhibition`);
   },
 };

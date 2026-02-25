@@ -13,6 +13,7 @@ interface AuthContextType {
   userType: "artist" | "corporate" | "customer" | null;
   currentUser: User | null;
   accessToken: string | null;
+  isInitialized: boolean; // Track if auth state has been loaded from localStorage
   login: (type: "artist" | "corporate" | "customer", userData?: { id: string; name: string; email: string }) => void;
   logout: () => void;
 }
@@ -24,6 +25,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [userType, setUserType] = useState<"artist" | "corporate" | "customer" | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [isInitialized, setIsInitialized] = useState(false); // Track initialization
 
   // 初期化時にlocalStorageから読み込み
   useEffect(() => {
@@ -40,6 +42,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setAccessToken(storedToken);
       }
     }
+    
+    // Mark as initialized after loading from localStorage
+    setIsInitialized(true);
   }, []);
 
   const login = (type: "artist" | "corporate" | "customer", userData?: { id: string; name: string; email: string }) => {
@@ -79,7 +84,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, userType, currentUser, accessToken, login, logout }}>
+    <AuthContext.Provider value={{ isAuthenticated, userType, currentUser, accessToken, isInitialized, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

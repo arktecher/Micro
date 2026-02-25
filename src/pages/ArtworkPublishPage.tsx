@@ -11,6 +11,7 @@ import {
   Heart,
   Star,
   Tag,
+  Clock,
 } from "lucide-react";
 
 import { Header } from "@/components/layout/Header";
@@ -18,70 +19,89 @@ import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { artworkService, type Artwork } from "@/services/artwork.service";
+import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "sonner";
+import { ImageWithFallback } from "@/components/common/ImageWithFallback";
 
 export function ArtworkPublishPage() {
   const navigate = useNavigate();
+  const { isAuthenticated, userType, currentUser, isInitialized } = useAuth();
   const [isPublishing, setIsPublishing] = useState(true);
+  const [publishedArtworks, setPublishedArtworks] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // localStorageから選択した作品データを取得
-  const getSelectedArtworks = () => {
-    const stored = localStorage.getItem("mgj_selected_artworks");
-    if (stored) {
-      return JSON.parse(stored);
-    }
-    // フォールバック用のモックデータ
-    return [
-      {
-        id: "1",
-        name: "夏の思い出",
-        price: "50,000",
-        width: 45.5,
-        height: 60.0,
-        depth: 3.0,
-        year: "2024",
-        technique: "油彩、キャンバス",
-        theme: "夏の海辺で感じた懐かしさと儚さを表現しました。",
-        hasImage: true,
-        isVideo: false,
-        tags: ["風景", "モダン"],
-      },
-      {
-        id: "2",
-        name: "都市の夜",
-        price: "80,000",
-        width: 72.7,
-        height: 53.0,
-        depth: 2.5,
-        year: "2023",
-        technique: "アクリル、パネル",
-        theme: "東京の夜景の美しさと孤独感を色彩で表現。",
-        hasImage: true,
-        isVideo: false,
-        tags: ["都市", "抽象"],
-      },
-      {
-        id: "3",
-        name: "静寂",
-        price: "120,000",
-        width: 91.0,
-        height: 72.7,
-        depth: 4.0,
-        year: "2024",
-        technique: "ミクストメディア",
-        theme: "音のない世界の中で感じる静けさと安らぎ。",
-        hasImage: true,
-        isVideo: true,
-        tags: ["抽象", "モダン"],
-      },
-    ];
+  // Technique options mapping
+  const techniqueOptions: { [key: string]: string } = {
+    oil: "油彩",
+    acrylic: "アクリル",
+    watercolor: "水彩",
+    "mixed-media": "ミクストメディア",
+    digital: "デジタル",
+    other: "その他",
   };
 
-  const selectedArtworks = getSelectedArtworks();
+  // Load published artworks from API
+  useEffect(() => {
+    if (!isInitialized) return;
+
+    if (!isAuthenticated || userType !== "artist") {
+      toast.error("このページはアーティスト専用です");
+      navigate("/login/artist");
+      return;
+    }
+
+    if (currentUser?.id) {
+      loadPublishedArtworks();
+    }
+  }, [isInitialized, isAuthenticated, userType, currentUser?.id, navigate]);
+
+  const loadPublishedArtworks = async () => {
+    if (!currentUser?.id) return;
+
+    setIsLoading(true);
+    try {
+      // Fetch only published artworks for the current artist
+      const response = await artworkService.listArtworks({
+        page: 1,
+        page_size: 100,
+        artist_id: currentUser.id,
+        status: "published", // Only fetch published artworks
+      });
+
+      // Map API response to match the expected format
+      const mappedArtworks = response.items.map((artwork: Artwork) => ({
+        id: artwork.id,
+        name: artwork.title,
+        price: Number(artwork.price).toLocaleString(),
+        width: artwork.dimensions?.width || 0,
+        height: artwork.dimensions?.height || 0,
+        depth: artwork.dimensions?.depth || 0,
+        year: artwork.year?.toString() || "",
+        technique: artwork.medium ? (techniqueOptions[artwork.medium] || artwork.medium) : "",
+        theme: artwork.story || artwork.description || "",
+        hasImage: !!artwork.main_image_url,
+        isVideo: false,
+        tags: artwork.style_tags || [],
+        main_image_url: artwork.main_image_url,
+        custom_id: artwork.custom_id,
+        status: artwork.status, // Include status
+      }));
+
+      setPublishedArtworks(mappedArtworks);
+    } catch (error: any) {
+      console.error("Failed to load published artworks:", error);
+      toast.error("公開作品の読み込みに失敗しました");
+      setPublishedArtworks([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
     window.scrollTo(0, 0);
 
-    // 公開処理のシミュレーション
+    // Show publishing animation for 2 seconds, then show results
     const timer = setTimeout(() => {
       setIsPublishing(false);
     }, 2000);
@@ -179,7 +199,7 @@ export function ArtworkPublishPage() {
                   transition={{ delay: 0.7, duration: 0.8 }}
                   className="text-lg sm:text-xl text-gray-600 mb-4 leading-relaxed px-2"
                 >
-                  {selectedArtworks.length}作品が、MGJのギャラリーに公開されました。
+                  {publishedArtworks.length}作品が、MGJのギャラリーに公開されています。
                 </motion.p>
               </motion.div>
             </div>
@@ -274,78 +294,134 @@ export function ArtworkPublishPage() {
                 </p>
               </motion.div>
 
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-8 sm:mb-12">
-                {selectedArtworks.map((artwork: any, index: number) => (
-                  <motion.div
-                    key={artwork.id}
-                    initial={{ opacity: 0, y: 30 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 1.8 + index * 0.1, duration: 0.6 }}
-                  >
-                    <Card className="bg-white rounded-xl sm:rounded-2xl overflow-hidden border-2 border-[#C3A36D]/20 shadow-lg hover:shadow-xl transition-shadow relative">
-                      {/* 公開中バッジ */}
-                      <div className="absolute top-3 left-3 sm:top-4 sm:left-4 z-10">
-                        <Badge className="bg-gradient-to-r from-[#C3A36D] to-[#D4B478] text-white border-0 px-2 sm:px-3 py-1 text-xs">
-                          <Eye className="w-3 h-3 mr-1" />
-                          公開中
-                        </Badge>
-                      </div>
-
-                      {/* 画像プレビュー */}
-                      <div className="aspect-square bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center overflow-hidden relative">
-                        {artwork.isVideo ? (
-                          <Video
-                            className="w-16 h-16 sm:w-20 sm:h-20 text-gray-300"
-                            strokeWidth={1.5}
-                          />
-                        ) : (
-                          <ImageIcon
-                            className="w-16 h-16 sm:w-20 sm:h-20 text-gray-300"
-                            strokeWidth={1.5}
-                          />
-                        )}
-                      </div>
-
-                      {/* 作品情報 */}
-                      <CardContent className="p-4 sm:p-5 space-y-2 sm:space-y-3">
-                        <div>
-                          <h3 className="text-lg sm:text-xl text-[#3A3A3A] mb-1">
-                            {artwork.name}
-                          </h3>
-                          <p className="text-base sm:text-lg text-[#C3A36D]">
-                            ¥{artwork.price}
-                          </p>
+              {isLoading ? (
+                <Card className="p-8 sm:p-12 text-center bg-white rounded-xl sm:rounded-2xl">
+                  <CardContent>
+                    <Clock className="w-12 h-12 sm:w-16 sm:h-16 text-[#C3A36D] mx-auto mb-4 animate-spin" />
+                    <h3 className="text-xl sm:text-2xl text-gray-600 mb-2">
+                      公開作品を読み込み中...
+                    </h3>
+                    <p className="text-sm sm:text-base text-gray-500">
+                      しばらくお待ちください
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : publishedArtworks.length === 0 ? (
+                <Card className="p-8 sm:p-12 text-center bg-white rounded-xl sm:rounded-2xl">
+                  <CardContent>
+                    <ImageIcon className="w-12 h-12 sm:w-16 sm:h-16 text-gray-300 mx-auto mb-4" />
+                    <h3 className="text-xl sm:text-2xl text-gray-600 mb-2">
+                      公開中の作品がありません
+                    </h3>
+                    <p className="text-sm sm:text-base text-gray-500 mb-6">
+                      作品を公開すると、ここに表示されます。
+                    </p>
+                    <Button
+                      onClick={() => navigate("/artwork-selection")}
+                      className="bg-[#C3A36D] hover:bg-[#C3A36D]/90 rounded-xl"
+                    >
+                      作品を公開する
+                    </Button>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-8 sm:mb-12">
+                  {publishedArtworks.map((artwork: any, index: number) => (
+                    <motion.div
+                      key={artwork.id}
+                      initial={{ opacity: 0, y: 30 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 1.8 + index * 0.1, duration: 0.6 }}
+                    >
+                      <Card className="bg-white rounded-xl sm:rounded-2xl overflow-hidden border-2 border-[#C3A36D]/20 shadow-lg hover:shadow-xl transition-shadow relative">
+                        {/* 公開中バッジ */}
+                        <div className="absolute top-3 left-3 sm:top-4 sm:left-4 z-10">
+                          <Badge className="bg-gradient-to-r from-[#C3A36D] to-[#D4B478] text-white border-0 px-2 sm:px-3 py-1 text-xs">
+                            <Eye className="w-3 h-3 mr-1" />
+                            公開中
+                          </Badge>
                         </div>
 
-                        <div className="flex flex-wrap gap-1.5 sm:gap-2">
-                          {artwork.tags.map((tag: string, i: number) => (
-                            <Badge
-                              key={i}
-                              variant="outline"
-                              className="text-xs border-[#C3A36D]/30 text-[#C3A36D]"
-                            >
-                              <Tag className="w-3 h-3 mr-1" />
-                              {tag}
-                            </Badge>
-                          ))}
+                        {/* 画像プレビュー */}
+                        <div className="aspect-square bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center overflow-hidden relative">
+                          {artwork.main_image_url ? (
+                            <ImageWithFallback
+                              src={artwork.main_image_url}
+                              alt={artwork.name}
+                              className="w-full h-full object-cover"
+                              fallback={
+                                <ImageIcon
+                                  className="w-16 h-16 sm:w-20 sm:h-20 text-gray-300"
+                                  strokeWidth={1.5}
+                                />
+                              }
+                            />
+                          ) : artwork.isVideo ? (
+                            <Video
+                              className="w-16 h-16 sm:w-20 sm:h-20 text-gray-300"
+                              strokeWidth={1.5}
+                            />
+                          ) : (
+                            <ImageIcon
+                              className="w-16 h-16 sm:w-20 sm:h-20 text-gray-300"
+                              strokeWidth={1.5}
+                            />
+                          )}
                         </div>
 
-                        <div className="text-xs sm:text-sm text-gray-600 space-y-1">
-                          <p>
-                            <span className="text-gray-500">サイズ：</span>
-                            {artwork.width}×{artwork.height}
-                            {artwork.depth && `×${artwork.depth}`}cm
-                          </p>
-                          <p>
-                            <span className="text-gray-500">技法：</span>
-                            {artwork.technique}
-                          </p>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </motion.div>
-                ))}
-              </div>
+                        {/* 作品情報 */}
+                        <CardContent className="p-4 sm:p-5 space-y-2 sm:space-y-3">
+                          <div>
+                            <h3 className="text-lg sm:text-xl text-[#3A3A3A] mb-1">
+                              {artwork.name}
+                            </h3>
+                            <p className="text-base sm:text-lg text-[#C3A36D]">
+                              ¥{artwork.price}
+                            </p>
+                          </div>
+
+                          {artwork.tags && artwork.tags.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 sm:gap-2">
+                              {artwork.tags.map((tag: string, i: number) => (
+                                <Badge
+                                  key={i}
+                                  variant="outline"
+                                  className="text-xs border-[#C3A36D]/30 text-[#C3A36D]"
+                                >
+                                  <Tag className="w-3 h-3 mr-1" />
+                                  {tag}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
+
+                          <div className="text-xs sm:text-sm text-gray-600 space-y-1">
+                            {artwork.width > 0 && artwork.height > 0 && (
+                              <p>
+                                <span className="text-gray-500">サイズ：</span>
+                                {artwork.width}×{artwork.height}
+                                {artwork.depth && artwork.depth > 0 && `×${artwork.depth}`}cm
+                              </p>
+                            )}
+                            {artwork.technique && (
+                              <p>
+                                <span className="text-gray-500">技法：</span>
+                                {artwork.technique}
+                              </p>
+                            )}
+                            {artwork.year && (
+                              <p>
+                                <span className="text-gray-500">制作年：</span>
+                                {artwork.year}年
+                              </p>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </motion.div>
+                  ))}
+                </div>
+              )}
 
               {/* CTAボタン */}
               <motion.div

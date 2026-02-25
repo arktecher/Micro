@@ -11,6 +11,7 @@ import {
   CheckCircle,
   AlertCircle,
   Palette,
+  Clock,
 } from "lucide-react";
 
 import { Header } from "@/components/layout/Header";
@@ -27,10 +28,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { bankService, type BankAccount } from "@/services/bank.service";
+import { useAuth } from "@/contexts/AuthContext";
 
 export function BankAccountEditPage() {
   const navigate = useNavigate();
+  const { isAuthenticated, userType, isInitialized } = useAuth();
   const [isSaved, setIsSaved] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [existingAccount, setExistingAccount] = useState<BankAccount | null>(null);
 
   // フォームの状態
   const [formData, setFormData] = useState({
@@ -46,6 +53,47 @@ export function BankAccountEditPage() {
     window.scrollTo(0, 0);
   }, []);
 
+  // 認証チェック
+  useEffect(() => {
+    if (!isInitialized) return;
+
+    if (!isAuthenticated || userType !== "artist") {
+      toast.error("このページはアーティスト専用です");
+      navigate("/login/artist");
+      return;
+    }
+
+    loadBankAccount();
+  }, [isInitialized, isAuthenticated, userType, navigate]);
+
+  // 既存の口座情報を読み込む
+  const loadBankAccount = async () => {
+    setIsLoading(true);
+    try {
+      const account = await bankService.getBankAccount();
+      setExistingAccount(account);
+      
+      // フォームに既存データを設定（マスクされた口座番号は設定しない）
+      setFormData({
+        accountType: account.account_type,
+        bankName: account.bank_name,
+        branchName: account.branch_name,
+        accountNumber: "", // セキュリティのため、既存の口座番号は表示しない
+        accountHolderKana: account.account_holder_name,
+      });
+    } catch (error: any) {
+      // 404エラー（口座未登録）は正常な状態
+      if (error.message?.includes("404") || error.message?.includes("見つかりません")) {
+        setExistingAccount(null);
+      } else {
+        console.error("Failed to load bank account:", error);
+        toast.error("口座情報の読み込みに失敗しました");
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({
       ...prev,
@@ -53,7 +101,7 @@ export function BankAccountEditPage() {
     }));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     // バリデーション
     if (
       !formData.bankName ||
@@ -65,15 +113,44 @@ export function BankAccountEditPage() {
       return;
     }
 
-    // 保存処理（実際にはAPIコール）
-    console.log("Saving bank account info:", formData);
-    setIsSaved(true);
-    toast.success("口座情報を保存しました");
+    // 口座番号のバリデーション
+    if (!/^\d{7}$/.test(formData.accountNumber)) {
+      toast.error("口座番号は7桁の数字で入力してください。");
+      return;
+    }
 
-    // 2秒後にダッシュボードに戻る
-    setTimeout(() => {
-      navigate("/dashboard");
-    }, 2000);
+    setIsSaving(true);
+    try {
+      const requestData = {
+        bank_name: formData.bankName,
+        branch_name: formData.branchName,
+        account_type: formData.accountType,
+        account_number: formData.accountNumber,
+        account_holder_kana: formData.accountHolderKana,
+      };
+
+      if (existingAccount) {
+        // 既存の口座を更新
+        await bankService.updateBankAccount(requestData);
+        toast.success("口座情報を更新しました");
+      } else {
+        // 新規登録
+        await bankService.registerBankAccount(requestData);
+        toast.success("口座情報を登録しました");
+      }
+
+      setIsSaved(true);
+
+      // 2秒後にダッシュボードに戻る
+      setTimeout(() => {
+        navigate("/dashboard");
+      }, 2000);
+    } catch (error: any) {
+      console.error("Failed to save bank account:", error);
+      toast.error(error.message || "口座情報の保存に失敗しました");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleCancel = () => {
@@ -85,6 +162,18 @@ export function BankAccountEditPage() {
     formData.branchName &&
     formData.accountNumber &&
     formData.accountHolderKana;
+
+  // ローディング中または認証チェック中
+  if (!isInitialized || isLoading) {
+    return (
+      <div className="min-h-screen bg-[#F8F6F1] flex items-center justify-center">
+        <div className="text-center">
+          <Clock className="w-8 h-8 animate-spin text-[#C3A36D] mx-auto mb-4" />
+          <p className="text-gray-600">読み込み中...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#F8F6F1]">
@@ -198,14 +287,14 @@ export function BankAccountEditPage() {
             <CardContent className="p-4 sm:p-6 md:p-8 space-y-4 sm:space-y-6">
               {/* 口座種別 */}
               <div className="space-y-2">
-                <Label htmlFor="accountType" className="text-sm sm:text-base">
+                <Label htmlFor="accountType" className="text-sm">
                   口座種別 <span className="text-red-500">*</span>
                 </Label>
                 <Select
                   value={formData.accountType}
                   onValueChange={(value) => handleInputChange("accountType", value)}
                 >
-                  <SelectTrigger id="accountType" className="h-11 sm:h-12">
+                  <SelectTrigger id="accountType" className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -217,7 +306,7 @@ export function BankAccountEditPage() {
 
               {/* 銀行名 */}
               <div className="space-y-2">
-                <Label htmlFor="bankName" className="text-sm sm:text-base">
+                <Label htmlFor="bankName" className="text-sm">
                   銀行名 <span className="text-red-500">*</span>
                 </Label>
                 <Input
@@ -226,7 +315,7 @@ export function BankAccountEditPage() {
                   placeholder="例：三菱UFJ銀行"
                   value={formData.bankName}
                   onChange={(e) => handleInputChange("bankName", e.target.value)}
-                  className="h-11 sm:h-12 text-sm sm:text-base"
+                  className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
                 />
                 <p className="text-xs sm:text-sm text-gray-500">
                   正式な銀行名を入力してください
@@ -235,7 +324,7 @@ export function BankAccountEditPage() {
 
               {/* 支店名 */}
               <div className="space-y-2">
-                <Label htmlFor="branchName" className="text-sm sm:text-base">
+                <Label htmlFor="branchName" className="text-sm">
                   支店名 <span className="text-red-500">*</span>
                 </Label>
                 <Input
@@ -244,32 +333,39 @@ export function BankAccountEditPage() {
                   placeholder="例：渋谷支店"
                   value={formData.branchName}
                   onChange={(e) => handleInputChange("branchName", e.target.value)}
-                  className="h-11 sm:h-12 text-sm sm:text-base"
+                  className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
                 />
               </div>
 
               {/* 口座番号 */}
               <div className="space-y-2">
-                <Label htmlFor="accountNumber" className="text-sm sm:text-base">
+                <Label htmlFor="accountNumber" className="text-sm">
                   口座番号 <span className="text-red-500">*</span>
                 </Label>
                 <Input
                   id="accountNumber"
                   type="text"
-                  placeholder="例：1234567"
+                  placeholder={existingAccount ? "セキュリティのため、再度入力してください" : "例：1234567"}
                   value={formData.accountNumber}
-                  onChange={(e) => handleInputChange("accountNumber", e.target.value)}
-                  className="h-11 sm:h-12 text-sm sm:text-base"
+                  onChange={(e) => {
+                    // 数字のみ許可
+                    const value = e.target.value.replace(/\D/g, "");
+                    handleInputChange("accountNumber", value);
+                  }}
+                  className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
                   maxLength={7}
+                  disabled={isSaving}
                 />
                 <p className="text-xs sm:text-sm text-gray-500">
-                  7桁の口座番号を入力してください
+                  {existingAccount 
+                    ? "セキュリティのため、口座番号を再度入力してください（7桁の数字）"
+                    : "7桁の口座番号を入力してください"}
                 </p>
               </div>
 
               {/* 口座名義（カナ） */}
               <div className="space-y-2">
-                <Label htmlFor="accountHolderKana" className="text-sm sm:text-base">
+                <Label htmlFor="accountHolderKana" className="text-sm">
                   口座名義（カナ） <span className="text-red-500">*</span>
                 </Label>
                 <Input
@@ -280,7 +376,7 @@ export function BankAccountEditPage() {
                   onChange={(e) =>
                     handleInputChange("accountHolderKana", e.target.value.toUpperCase())
                   }
-                  className="h-11 sm:h-12 text-sm sm:text-base"
+                  className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
                 />
                 <p className="text-xs sm:text-sm text-gray-500">
                   全角カタカナで入力してください（姓と名の間にスペースは不要です）
@@ -310,16 +406,25 @@ export function BankAccountEditPage() {
               <div className="flex flex-col sm:flex-row gap-3 pt-4 sm:pt-6">
                 <Button
                   onClick={handleSave}
-                  disabled={!isFormValid || isSaved}
+                  disabled={!isFormValid || isSaved || isSaving}
                   className="bg-gradient-to-r from-[#C3A36D] to-[#D4B478] hover:opacity-90 flex-1 h-11 sm:h-12 text-sm sm:text-base disabled:opacity-50"
                 >
-                  <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
-                  保存する
+                  {isSaving ? (
+                    <>
+                      <Clock className="w-4 h-4 sm:w-5 sm:h-5 mr-2 animate-spin" />
+                      保存中...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
+                      {existingAccount ? "更新する" : "登録する"}
+                    </>
+                  )}
                 </Button>
                 <Button
                   variant="outline"
                   onClick={handleCancel}
-                  disabled={isSaved}
+                  disabled={isSaved || isSaving}
                   className="flex-1 h-11 sm:h-12 text-sm sm:text-base"
                 >
                   キャンセル

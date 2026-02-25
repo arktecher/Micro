@@ -28,6 +28,9 @@ import { Badge } from "@/components/ui/badge";
 import { StyleTagsSection } from "@/components/common/StyleTagsSection";
 import { createImagePreviewUrl, isHeicFile } from "@/lib/heicConverter";
 import { toast } from "sonner";
+import { artworkService } from "@/services/artwork.service";
+import { useAuth } from "@/contexts/AuthContext";
+import { Loader2 } from "lucide-react";
 
 interface Artwork {
   id: string;
@@ -46,12 +49,9 @@ interface Artwork {
 
 export function ArtistArtworksPage() {
   const navigate = useNavigate();
-
-  // ページ遷移時に一番上にスクロール
-  useEffect(() => {
-    window.scrollTo(0, 0);
-  }, []);
-
+  const { isAuthenticated, userType, isInitialized } = useAuth();
+  
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [artworks, setArtworks] = useState<Artwork[]>([
     {
       id: "1",
@@ -68,19 +68,40 @@ export function ArtistArtworksPage() {
       styleTags: [],
     },
   ]);
-
   // Store preview URLs for each file (key: artworkId-fileIndex, value: preview URL)
   const [previewUrls, setPreviewUrls] = useState<Map<string, string>>(new Map());
   // Store loading states for preview URLs (key: artworkId-fileIndex)
   const [loadingPreviews, setLoadingPreviews] = useState<Set<string>>(new Set());
 
-  // 年のリストを生成（1950年から現在まで）
-  const currentYear = new Date().getFullYear();
-  const years = Array.from({ length: currentYear - 1949 }, (_, i) =>
-    (currentYear - i).toString()
-  );
+  // Check for token synchronously (not in state to avoid race conditions)
+  const checkToken = () => {
+    if (typeof window === "undefined") return false;
+    return !!localStorage.getItem("mgj_access_token");
+  };
+
+  // ページ遷移時に一番上にスクロール
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
+  // 認証チェック
+  useEffect(() => {
+    if (!isInitialized) return;
+    
+    // Check token synchronously
+    const hasToken = checkToken();
+    
+    // Allow access if user has token (during signup flow) or is authenticated as artist
+    const canAccess = hasToken || (isAuthenticated && userType === "artist");
+    
+    if (!canAccess) {
+      toast.error("このページはアーティスト専用です");
+      navigate("/login/artist");
+    }
+  }, [isAuthenticated, userType, isInitialized, navigate]);
 
   // クリーンアップ: ファイルプレビューのURLを解放
+  // IMPORTANT: This hook must be called BEFORE any conditional returns to follow Rules of Hooks
   useEffect(() => {
     return () => {
       previewUrls.forEach((url) => {
@@ -88,6 +109,41 @@ export function ArtistArtworksPage() {
       });
     };
   }, [previewUrls]);
+
+  // Show loading state while auth is initializing
+  if (!isInitialized) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-cream/30 via-white to-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">読み込み中...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Check token synchronously for render decision
+  const hasToken = checkToken();
+  
+  // Allow access if user has token (signup flow) or is authenticated as artist
+  // Only block if no token AND not authenticated
+  if (!hasToken && (!isAuthenticated || userType !== "artist")) {
+    // Show loading while redirect happens (useEffect will handle redirect)
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-cream/30 via-white to-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">リダイレクト中...</p>
+        </div>
+      </div>
+    );
+  }
+  
+  // 年のリストを生成（1950年から現在まで）
+  const currentYear = new Date().getFullYear();
+  const years = Array.from({ length: currentYear - 1949 }, (_, i) =>
+    (currentYear - i).toString()
+  );
 
   const addArtwork = () => {
     const newId = (artworks.length + 1).toString();
@@ -231,9 +287,74 @@ export function ArtistArtworksPage() {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Artwork registration data:", artworks);
+
+    // Validate all artworks
+    const errors: string[] = [];
+    artworks.forEach((artwork, index) => {
+      if (!artwork.name.trim()) {
+        errors.push("作品名を入力してください");
+      }
+      if (!artwork.price || parseFloat(artwork.price) <= 0) {
+        errors.push("販売価格を正しく入力してください");
+      }
+      if (!artwork.width || parseFloat(artwork.width) <= 0) {
+        errors.push("幅を入力してください");
+      }
+      if (!artwork.height || parseFloat(artwork.height) <= 0) {
+        errors.push("高さを入力してください");
+      }
+      if (!artwork.year) {
+        errors.push("制作年を選択してください");
+      }
+      if (!artwork.theme.trim()) {
+        errors.push("作品の説明を入力してください");
+      }
+      if (artwork.files.length === 0) {
+        errors.push("少なくとも1枚の画像をアップロードしてください");
+      }
+    });
+
+    if (errors.length > 0) {
+      toast.error(errors[0]);
+      if (errors.length > 1) {
+        console.error("Validation errors:", errors);
+      }
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      // Create all artworks
+      const createdArtworks = [];
+      for (let i = 0; i < artworks.length; i++) {
+        const artwork = artworks[i];
+
+        // Create artwork via API
+        const created = await artworkService.createArtwork(
+          {
+            title: artwork.name,
+            story: artwork.theme,
+            price: parseFloat(artwork.price),
+            dimensions: {
+              width: parseFloat(artwork.width),
+              height: parseFloat(artwork.height),
+              depth: artwork.depth ? parseFloat(artwork.depth) : undefined,
+            },
+            year: artwork.year ? parseInt(artwork.year) : undefined,
+            has_frame: artwork.hasFrame,
+            style_tags: artwork.styleTags && artwork.styleTags.length > 0 ? artwork.styleTags : undefined,
+            is_ai_generated: artwork.isAIGenerated,
+          },
+          artwork.files
+        );
+        
+        createdArtworks.push(created);
+      }
+
+      toast.success(`${createdArtworks.length}件の作品を登録しました`);
 
     // Check if user has already agreed to terms
     const hasAgreed = localStorage.getItem("mgj_artist_terms_agreed");
@@ -243,6 +364,14 @@ export function ArtistArtworksPage() {
     } else {
       // User hasn't agreed yet, show contract page
       navigate("/signup/artist/contract");
+      }
+    } catch (error: any) {
+      console.error("Error creating artworks:", error);
+      toast.error(
+        error.message || "作品の登録に失敗しました。もう一度お試しください。"
+      );
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -297,14 +426,9 @@ export function ArtistArtworksPage() {
                 transition={{ duration: 0.5, delay: index * 0.1 }}
               >
                 <Card className="shadow-xl border-2 relative">
-                  {/* 作品番号と削除ボタン */}
-                  <div className="absolute top-4 right-4 sm:top-6 sm:right-6 flex items-center gap-2 sm:gap-3 z-10">
-                    <div className="px-2 sm:px-4 py-1 sm:py-2 bg-primary/10 rounded-full">
-                      <span className="text-xs sm:text-sm text-primary">
-                        作品 {index + 1}
-                      </span>
-                    </div>
+                  {/* 削除ボタン */}
                     {artworks.length > 1 && (
+                    <div className="absolute top-4 right-4 sm:top-6 sm:right-6 z-10">
                       <Button
                         type="button"
                         variant="ghost"
@@ -314,10 +438,10 @@ export function ArtistArtworksPage() {
                       >
                         <X className="w-4 h-4 sm:w-5 sm:h-5" />
                       </Button>
-                    )}
                   </div>
+                  )}
 
-                  <CardHeader className="border-b bg-gradient-to-r from-gray-50 to-white pr-20 sm:pr-32 pt-4 sm:pt-6 pb-3 sm:pb-4 px-4 sm:px-6">
+                  <CardHeader className="border-b bg-gradient-to-r from-gray-50 to-white pt-4 sm:pt-6 pb-3 sm:pb-4 px-4 sm:px-6">
                     <CardTitle className="text-lg sm:text-xl md:text-2xl">
                       作品情報
                     </CardTitle>
@@ -519,7 +643,7 @@ export function ArtistArtworksPage() {
                           <div className="space-y-2">
                             <Label
                               htmlFor={`name-${artwork.id}`}
-                              className="text-sm sm:text-base"
+                              className="text-sm"
                             >
                               作品名 <span className="text-accent">*</span>
                             </Label>
@@ -535,14 +659,14 @@ export function ArtistArtworksPage() {
                                   e.target.value
                                 )
                               }
-                              className="h-10 sm:h-12 bg-white text-sm sm:text-base"
+                              className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary text-sm sm:text-base"
                             />
                           </div>
 
                           <div className="space-y-2">
                             <Label
                               htmlFor={`price-${artwork.id}`}
-                              className="text-sm sm:text-base"
+                              className="text-sm"
                             >
                               販売価格（円）{" "}
                               <span className="text-accent">*</span>
@@ -559,7 +683,7 @@ export function ArtistArtworksPage() {
                                   e.target.value
                                 )
                               }
-                              className="h-10 sm:h-12 bg-white text-sm sm:text-base"
+                              className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary text-sm sm:text-base"
                             />
                           </div>
                         </div>
@@ -595,7 +719,7 @@ export function ArtistArtworksPage() {
                                     e.target.value
                                   )
                                 }
-                                className="h-10 sm:h-12 bg-white text-sm sm:text-base"
+                                className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary text-sm sm:text-base"
                               />
                             </div>
 
@@ -619,7 +743,7 @@ export function ArtistArtworksPage() {
                                     e.target.value
                                   )
                                 }
-                                className="h-10 sm:h-12 bg-white text-sm sm:text-base"
+                                className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary text-sm sm:text-base"
                               />
                             </div>
 
@@ -643,7 +767,7 @@ export function ArtistArtworksPage() {
                                     e.target.value
                                   )
                                 }
-                                className="h-10 sm:h-12 bg-white text-sm sm:text-base"
+                                className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary text-sm sm:text-base"
                               />
                               <p className="text-xs text-gray-500">
                                 ※ 平面作品の場合は空欄可
@@ -656,7 +780,7 @@ export function ArtistArtworksPage() {
                           <div className="space-y-2">
                             <Label
                               htmlFor={`year-${artwork.id}`}
-                              className="text-sm sm:text-base"
+                              className="text-sm"
                             >
                               制作年 <span className="text-accent">*</span>
                             </Label>
@@ -666,7 +790,7 @@ export function ArtistArtworksPage() {
                                 updateArtwork(artwork.id, "year", value)
                               }
                             >
-                              <SelectTrigger className="h-10 sm:h-12 bg-white text-sm sm:text-base">
+                              <SelectTrigger className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary text-sm sm:text-base">
                                 <SelectValue placeholder="年を選択" />
                               </SelectTrigger>
                               <SelectContent>
@@ -680,7 +804,7 @@ export function ArtistArtworksPage() {
                           </div>
 
                           <div className="space-y-2">
-                            <Label className="text-sm sm:text-base">
+                            <Label className="text-sm">
                               額装 <span className="text-accent">*</span>
                             </Label>
                             <div className="flex items-center gap-4 h-10 sm:h-12">
@@ -736,7 +860,7 @@ export function ArtistArtworksPage() {
                         <div className="space-y-2">
                           <Label
                             htmlFor={`theme-${artwork.id}`}
-                            className="text-sm sm:text-base"
+                            className="text-sm"
                           >
                             作品の説明 <span className="text-accent">*</span>
                           </Label>
@@ -747,7 +871,7 @@ export function ArtistArtworksPage() {
                             onChange={(e) =>
                               updateArtwork(artwork.id, "theme", e.target.value)
                             }
-                            className="min-h-[120px] sm:min-h-[150px] bg-white resize-y text-sm sm:text-base"
+                            className="min-h-[120px] sm:min-h-[150px] bg-gray-100 border-gray-200 focus:bg-white focus:border-primary resize-none text-sm sm:text-base"
                           />
                           <p className="text-xs text-gray-500">
                             作品を見る人に伝えたいことを、あなたの言葉で書いてみてください
@@ -958,10 +1082,20 @@ export function ArtistArtworksPage() {
               <Button
                 type="submit"
                 size="lg"
-                className="w-full sm:w-auto sm:min-w-[300px] h-12 sm:h-14 bg-primary hover:bg-primary/90 text-base sm:text-lg mx-auto flex items-center justify-center gap-2"
+                className="w-full sm:w-auto sm:min-w-[300px] h-12 sm:h-14 bg-primary hover:bg-primary/90 text-base sm:text-lg mx-auto flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isSubmitting}
               >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />
+                    <span>登録中...</span>
+                  </>
+                ) : (
+                  <>
                 <span>登録して次へ進む</span>
                 <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
+                  </>
+                )}
               </Button>
             </motion.div>
           </form>

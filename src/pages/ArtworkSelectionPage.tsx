@@ -10,6 +10,7 @@ import {
   Frame,
   Lightbulb,
   Tag,
+  Clock,
 } from "lucide-react";
 
 import { Header } from "@/components/layout/Header";
@@ -17,62 +18,95 @@ import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-
-// モックデータ - 実際にはAPIから取得
-const mockArtworks = [
-  {
-    id: "1",
-    name: "夏の思い出",
-    price: "50,000",
-    width: 45.5,
-    height: 60.0,
-    depth: 3.0,
-    year: "2024",
-    technique: "油彩、キャンバス",
-    theme: "夏の海辺で感じた懐かしさと儚さを表現しました。",
-    hasImage: true,
-    isVideo: false,
-    tags: ["風景", "モダン"],
-  },
-  {
-    id: "2",
-    name: "都市の夜",
-    price: "80,000",
-    width: 72.7,
-    height: 53.0,
-    depth: 2.5,
-    year: "2023",
-    technique: "アクリル、パネル",
-    theme: "東京の夜景の美しさと孤独感を色彩で表現。",
-    hasImage: true,
-    isVideo: false,
-    tags: ["都市", "抽象"],
-  },
-  {
-    id: "3",
-    name: "静寂",
-    price: "120,000",
-    width: 91.0,
-    height: 72.7,
-    depth: 4.0,
-    year: "2024",
-    technique: "ミクストメディア",
-    theme: "音のない世界の中で感じる静けさと安らぎ。",
-    hasImage: true,
-    isVideo: true,
-    tags: ["抽象", "モダン"],
-  },
-];
+import { artworkService, type Artwork } from "@/services/artwork.service";
+import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "sonner";
 
 export function ArtworkSelectionPage() {
   const navigate = useNavigate();
+  const { isAuthenticated, userType, currentUser, isInitialized } = useAuth();
   const [selectedArtworks, setSelectedArtworks] = useState<string[]>([]);
+  const [artworks, setArtworks] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isPublishing, setIsPublishing] = useState(false);
 
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
 
+  // Load artworks from API
+  useEffect(() => {
+    if (!isInitialized) return;
+
+    if (!isAuthenticated || userType !== "artist") {
+      toast.error("このページはアーティスト専用です");
+      navigate("/login/artist");
+      return;
+    }
+
+    if (currentUser?.id) {
+      loadArtworks();
+    }
+  }, [isInitialized, isAuthenticated, userType, currentUser?.id, navigate]);
+
+  // Technique options mapping
+  const techniqueOptions: { [key: string]: string } = {
+    oil: "油彩",
+    acrylic: "アクリル",
+    watercolor: "水彩",
+    "mixed-media": "ミクストメディア",
+    digital: "デジタル",
+    other: "その他",
+  };
+
+  const loadArtworks = async () => {
+    if (!currentUser?.id) return;
+
+    setIsLoading(true);
+    try {
+      const response = await artworkService.listArtworks({
+        page: 1,
+        page_size: 100, // Get all artworks
+        artist_id: currentUser.id, // Filter by current artist
+      });
+
+      // Map API response to match the expected format
+      const mappedArtworks = response.items.map((artwork: Artwork) => ({
+        id: artwork.id,
+        name: artwork.title,
+        price: Number(artwork.price).toLocaleString(),
+        width: artwork.dimensions?.width || 0,
+        height: artwork.dimensions?.height || 0,
+        depth: artwork.dimensions?.depth || 0,
+        year: artwork.year?.toString() || "",
+        technique: artwork.medium ? (techniqueOptions[artwork.medium] || artwork.medium) : "",
+        theme: artwork.story || artwork.description || "",
+        hasImage: !!artwork.main_image_url,
+        isVideo: false, // Can be determined from image URL or file type later
+        tags: artwork.style_tags || [],
+        main_image_url: artwork.main_image_url,
+        custom_id: artwork.custom_id,
+        status: artwork.status, // Include status to check if already published
+      }));
+
+      setArtworks(mappedArtworks);
+    } catch (error: any) {
+      console.error("Failed to load artworks:", error);
+      toast.error("作品の読み込みに失敗しました");
+      setArtworks([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const toggleArtwork = (id: string) => {
+    // Find the artwork to check if it's already published
+    const artwork = artworks.find((a) => a.id === id);
+    if (artwork && artwork.status === "published") {
+      // Don't allow selection of already published artworks
+      return;
+    }
+    
     setSelectedArtworks((prev) =>
       prev.includes(id)
         ? prev.filter((artworkId) => artworkId !== id)
@@ -87,14 +121,71 @@ export function ArtworkSelectionPage() {
     }
   };
 
-  const handleNext = () => {
-    // 選択した作品をlocalStorageに保存
-    const selectedData = mockArtworks.filter((artwork) =>
+  const handleNext = async () => {
+    if (selectedArtworks.length === 0) {
+      toast.error("少なくとも1つの作品を選択してください");
+      return;
+    }
+
+    setIsPublishing(true);
+
+    try {
+      // Get selected artwork data for localStorage (for the publish page)
+      const selectedData = artworks.filter((artwork) =>
       selectedArtworks.includes(artwork.id)
     );
-    localStorage.setItem("mgj_selected_artworks", JSON.stringify(selectedData));
+
+      // Batch publish all selected artworks via API
+      const response = await artworkService.batchPublishArtworks(selectedArtworks);
+
+      // Show success/error messages
+      if (response.successful > 0) {
+        toast.success(`${response.successful}件の作品を公開しました`);
+      }
+      
+      if (response.failed > 0) {
+        const failedResults = response.results.filter(r => !r.success);
+        const failedNames = failedResults.map(f => {
+          const artwork = artworks.find(a => a.id === f.artwork_id);
+          return artwork?.name || f.artwork_id;
+        }).join("、");
+        toast.error(`${response.failed}件の作品の公開に失敗しました: ${failedNames}`);
+      }
+
+      // Only save successfully published artworks to localStorage
+      const successfulArtworkIds = response.results
+        .filter(r => r.success)
+        .map(r => r.artwork_id);
+      const successfulArtworkData = selectedData.filter((artwork) =>
+        successfulArtworkIds.includes(artwork.id)
+      );
+
+      // Save selected data to localStorage for the publish page
+      localStorage.setItem("mgj_selected_artworks", JSON.stringify(successfulArtworkData));
+
+      // Navigate to publish page only if at least one artwork was published
+      if (response.successful > 0) {
     navigate("/artwork-publish");
+      }
+    } catch (error: any) {
+      console.error("Failed to publish artworks:", error);
+      toast.error("作品の公開に失敗しました: " + (error.message || "不明なエラー"));
+    } finally {
+      setIsPublishing(false);
+    }
   };
+
+  // Show loading state while auth is initializing
+  if (!isInitialized) {
+    return (
+      <div className="min-h-screen bg-[#F8F6F1] flex items-center justify-center">
+        <div className="text-center">
+          <Clock className="w-8 h-8 animate-spin text-[#C3A36D] mx-auto mb-4" />
+          <p className="text-gray-600">読み込み中...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#F8F6F1]">
@@ -331,7 +422,19 @@ export function ArtworkSelectionPage() {
             </p>
           </motion.div>
 
-          {mockArtworks.length === 0 ? (
+          {isLoading ? (
+            <Card className="p-8 sm:p-12 text-center bg-white rounded-xl sm:rounded-2xl">
+              <CardContent>
+                <Clock className="w-12 h-12 sm:w-16 sm:h-16 text-[#C3A36D] mx-auto mb-4 animate-spin" />
+                <h3 className="text-xl sm:text-2xl text-gray-600 mb-2">
+                  作品を読み込み中...
+                </h3>
+                <p className="text-sm sm:text-base text-gray-500">
+                  しばらくお待ちください
+                </p>
+              </CardContent>
+            </Card>
+          ) : artworks.length === 0 ? (
             <Card className="p-8 sm:p-12 text-center bg-white rounded-xl sm:rounded-2xl">
               <CardContent>
                 <ImageIcon className="w-12 h-12 sm:w-16 sm:h-16 text-gray-300 mx-auto mb-4" />
@@ -352,8 +455,10 @@ export function ArtworkSelectionPage() {
           ) : (
             <>
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6 mb-20 sm:mb-24">
-                {mockArtworks.map((artwork, index) => {
+                {artworks.map((artwork, index) => {
                   const isSelected = selectedArtworks.includes(artwork.id);
+                  const isPublished = artwork.status === "published";
+                  const isSelectable = !isPublished;
 
                   return (
                     <motion.div
@@ -364,17 +469,19 @@ export function ArtworkSelectionPage() {
                       transition={{ duration: 0.5, delay: 0.1 * index }}
                     >
                       <motion.div
-                        whileHover={{ y: -8, scale: 1.02 }}
+                        whileHover={isSelectable ? { y: -8, scale: 1.02 } : {}}
                         transition={{ type: "spring", stiffness: 300 }}
                         className="group relative"
                       >
                         <Card
-                          className={`cursor-pointer transition-all duration-300 bg-white rounded-xl sm:rounded-2xl overflow-hidden border-2 ${
-                            isSelected
-                              ? "border-[#C3A36D] shadow-2xl shadow-[#C3A36D]/20"
-                              : "border-transparent hover:border-gray-200 hover:shadow-xl"
+                          className={`transition-all duration-300 bg-white rounded-xl sm:rounded-2xl overflow-hidden border-2 ${
+                            isPublished
+                              ? "border-gray-300 opacity-75 cursor-not-allowed"
+                              : isSelected
+                              ? "border-[#C3A36D] shadow-2xl shadow-[#C3A36D]/20 cursor-pointer"
+                              : "border-transparent hover:border-gray-200 hover:shadow-xl cursor-pointer"
                           }`}
-                          onClick={() => toggleArtwork(artwork.id)}
+                          onClick={() => isSelectable && toggleArtwork(artwork.id)}
                         >
                           {/* 選択状態のオーバーレイ */}
                           {isSelected && (
@@ -385,7 +492,18 @@ export function ArtworkSelectionPage() {
                             />
                           )}
 
+                          {/* 公開済みバッジ */}
+                          {isPublished && (
+                            <div className="absolute top-3 left-3 sm:top-4 sm:left-4 z-20">
+                              <Badge className="bg-green-500 text-white border-0 px-2 sm:px-3 py-1 text-xs">
+                                <CheckCircle className="w-3 h-3 mr-1" />
+                                公開済み
+                              </Badge>
+                            </div>
+                          )}
+
                           {/* チェックマーク */}
+                          {isSelectable && (
                           <div className="absolute top-3 right-3 sm:top-4 sm:right-4 z-20">
                             <motion.div
                               initial={false}
@@ -410,10 +528,12 @@ export function ArtworkSelectionPage() {
                               )}
                             </motion.div>
                           </div>
+                          )}
 
                           {/* 画像プレビュー */}
                           <div className="aspect-square bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center overflow-hidden relative">
                             {/* Hover時の「展示候補にする」メッセージ */}
+                            {isSelectable && (
                             <motion.div
                               initial={{ opacity: 0, y: 10 }}
                               whileHover={{ opacity: 1, y: 0 }}
@@ -426,8 +546,37 @@ export function ArtworkSelectionPage() {
                                 </p>
                               </div>
                             </motion.div>
+                            )}
+                            {/* 公開済みの場合のオーバーレイ */}
+                            {isPublished && (
+                              <div className="absolute inset-0 bg-black/20 backdrop-blur-[1px] flex items-center justify-center z-10">
+                                <div className="text-center px-4">
+                                  <CheckCircle className="w-8 h-8 sm:w-12 sm:h-12 text-white mx-auto mb-2" />
+                                  <p className="text-sm sm:text-base text-white font-medium">
+                                    既に公開済み
+                                  </p>
+                                </div>
+                              </div>
+                            )}
 
-                            {artwork.isVideo ? (
+                            {artwork.main_image_url ? (
+                              <img
+                                src={artwork.main_image_url}
+                                alt={artwork.name}
+                                className="w-full h-full object-cover"
+                                onError={(e) => {
+                                  const target = e.target as HTMLImageElement;
+                                  target.style.display = "none";
+                                  const parent = target.parentElement;
+                                  if (parent) {
+                                    const icon = document.createElement("div");
+                                    icon.className = "w-full h-full flex items-center justify-center";
+                                    icon.innerHTML = `<svg class="w-16 h-16 sm:w-20 sm:h-20 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>`;
+                                    parent.appendChild(icon);
+                                  }
+                                }}
+                              />
+                            ) : artwork.isVideo ? (
                               <Video
                                 className="w-16 h-16 sm:w-20 sm:h-20 text-gray-300"
                                 strokeWidth={1.5}
@@ -525,16 +674,25 @@ export function ArtworkSelectionPage() {
 
                     <Button
                       onClick={handleNext}
-                      disabled={selectedArtworks.length === 0}
+                      disabled={selectedArtworks.length === 0 || isPublishing}
                       size="lg"
                       className={`px-6 sm:px-10 py-5 sm:py-7 text-base sm:text-lg rounded-xl sm:rounded-2xl shadow-xl transition-all w-full sm:w-auto ${
-                        selectedArtworks.length > 0
+                        selectedArtworks.length > 0 && !isPublishing
                           ? "bg-gradient-to-r from-[#C3A36D] to-[#D4B478] hover:opacity-90 text-white"
                           : "bg-gray-200 text-gray-400 cursor-not-allowed"
                       }`}
                     >
+                      {isPublishing ? (
+                        <>
+                          <Clock className="w-4 h-4 sm:w-5 sm:h-5 mr-2 animate-spin" />
+                          <span>公開中...</span>
+                        </>
+                      ) : (
+                        <>
                       <span>選択を確定する</span>
                       <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
+                        </>
+                      )}
                     </Button>
                   </div>
                 </div>

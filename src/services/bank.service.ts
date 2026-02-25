@@ -1,37 +1,49 @@
 /**
  * Bank Service
  * Handles bank account management
- * 
- * NOTE: Will be fully implemented in Phase 3
  */
 import { api } from "@/lib/api";
 
 export interface BankAccount {
   id: string;
-  account_type: string;
   bank_name: string;
   branch_name: string;
-  account_number_masked: string;
-  account_holder_kana: string;
-  status: string;
+  account_type: string; // "普通" or "当座"
+  account_number_masked: string; // Last 4 digits only
+  account_holder_name: string; // Account holder name in Katakana
+  is_primary: boolean;
+  is_verified: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BankAccountRequest {
+  bank_name: string;
+  branch_name: string;
+  account_type: string; // "普通" or "当座"
+  account_number: string; // 7 digits
+  account_holder_kana: string; // Account holder name in Katakana
 }
 
 export const bankService = {
   /**
-   * Get bank account
-   * TODO: Implement in Phase 3
+   * Get bank account for current artist
    */
   async getBankAccount(): Promise<BankAccount> {
-    // return api.get("/artists/me/bank-account");
-    throw new Error("Not implemented yet - Phase 3");
+    return api.get<BankAccount>("/artists/me/bank-account");
   },
 
   /**
    * Register bank account
-   * TODO: Implement in Phase 3
    */
-  async registerBankAccount(data: any): Promise<BankAccount> {
-    // return api.post("/artists/me/bank-account", data);
-    throw new Error("Not implemented yet - Phase 3");
+  async registerBankAccount(data: BankAccountRequest): Promise<BankAccount> {
+    return api.post<BankAccount>("/artists/me/bank-account", data);
+  },
+
+  /**
+   * Update bank account
+   */
+  async updateBankAccount(data: BankAccountRequest): Promise<BankAccount> {
+    return api.put<BankAccount>("/artists/me/bank-account", data);
   },
 };

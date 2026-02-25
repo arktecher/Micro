@@ -345,6 +345,8 @@ export function ArtistArtworksPage() {
             },
             year: artwork.year ? parseInt(artwork.year) : undefined,
             has_frame: artwork.hasFrame,
+            style_tags: artwork.styleTags && artwork.styleTags.length > 0 ? artwork.styleTags : undefined,
+            is_ai_generated: artwork.isAIGenerated,
           },
           artwork.files
         );
@@ -354,14 +356,14 @@ export function ArtistArtworksPage() {
 
       toast.success(`${createdArtworks.length}件の作品を登録しました`);
 
-      // Check if user has already agreed to terms
-      const hasAgreed = localStorage.getItem("mgj_artist_terms_agreed");
-      if (hasAgreed === "true") {
-        // User has already agreed, skip contract page and go directly to artwork selection
-        navigate("/artwork-selection");
-      } else {
-        // User hasn't agreed yet, show contract page
-        navigate("/signup/artist/contract");
+    // Check if user has already agreed to terms
+    const hasAgreed = localStorage.getItem("mgj_artist_terms_agreed");
+    if (hasAgreed === "true") {
+      // User has already agreed, skip contract page and go directly to artwork selection
+      navigate("/artwork-selection");
+    } else {
+      // User hasn't agreed yet, show contract page
+      navigate("/signup/artist/contract");
       }
     } catch (error: any) {
       console.error("Error creating artworks:", error);
@@ -425,7 +427,7 @@ export function ArtistArtworksPage() {
               >
                 <Card className="shadow-xl border-2 relative">
                   {/* 削除ボタン */}
-                  {artworks.length > 1 && (
+                    {artworks.length > 1 && (
                     <div className="absolute top-4 right-4 sm:top-6 sm:right-6 z-10">
                       <Button
                         type="button"
@@ -436,7 +438,7 @@ export function ArtistArtworksPage() {
                       >
                         <X className="w-4 h-4 sm:w-5 sm:h-5" />
                       </Button>
-                    </div>
+                  </div>
                   )}
 
                   <CardHeader className="border-b bg-gradient-to-r from-gray-50 to-white pt-4 sm:pt-6 pb-3 sm:pb-4 px-4 sm:px-6">
@@ -1090,8 +1092,8 @@ export function ArtistArtworksPage() {
                   </>
                 ) : (
                   <>
-                    <span>登録して次へ進む</span>
-                    <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
+                <span>登録して次へ進む</span>
+                <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
                   </>
                 )}
               </Button>

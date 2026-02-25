@@ -62,6 +62,13 @@ export const userService = {
   },
 
   /**
+   * Delete profile image
+   */
+  async deleteProfileImage(): Promise<UserProfile> {
+    return api.delete<UserProfile>("/users/me/profile-image");
+  },
+
+  /**
    * Deactivate account (soft delete)
    */
   async deactivateAccount(): Promise<{ message: string }> {

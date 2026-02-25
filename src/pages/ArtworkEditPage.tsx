@@ -68,6 +68,12 @@ export function ArtworkEditPage() {
   const [isAIGenerated, setIsAIGenerated] = useState(false);
   const [isAutoPlaying, setIsAutoPlaying] = useState(true);
   const [isHovering, setIsHovering] = useState(false);
+  
+  // Store original data to detect changes
+  const [originalFormData, setOriginalFormData] = useState<FormData | null>(null);
+  const [originalStyleTags, setOriginalStyleTags] = useState<string[]>([]);
+  const [originalIsAIGenerated, setOriginalIsAIGenerated] = useState(false);
+  const [originalImages, setOriginalImages] = useState<ArtworkImage[]>([]);
 
   const [formData, setFormData] = useState<FormData>({
     title: "",
@@ -112,7 +118,7 @@ export function ArtworkEditPage() {
       setArtwork(data);
 
       // Set form data from artwork
-      setFormData({
+      const loadedFormData: FormData = {
         title: data.title || "",
         price: Number(data.price) || 0,
         lease_price: Number(data.lease_price) || 0,
@@ -130,26 +136,41 @@ export function ArtworkEditPage() {
         description: data.description || "",
         story: data.story || "",
         has_frame: data.has_frame || false,
-      });
+      };
+      setFormData(loadedFormData);
+      
+      // Store original form data for change detection
+      setOriginalFormData({ ...loadedFormData });
 
       // Set style tags and AI generated flag
-      setStyleTags(data.style_tags || []);
+      const loadedStyleTags = data.style_tags || [];
+      setStyleTags(loadedStyleTags);
       setIsAIGenerated(data.is_ai_generated || false);
+      
+      // Store original values for change detection
+      setOriginalStyleTags([...loadedStyleTags]);
+      setOriginalIsAIGenerated(data.is_ai_generated || false);
 
       // Set images
+      let loadedImages: ArtworkImage[] = [];
       if (data.images && data.images.length > 0) {
-        setImages(data.images);
+        loadedImages = data.images;
+        setImages(loadedImages);
         setCurrentImageIndex(0);
       } else if (data.main_image_url) {
         // Fallback to main_image_url if images array is not available
-        setImages([{
+        loadedImages = [{
           id: "main",
           image_url: data.main_image_url,
           image_order: 0,
           is_main: true,
-        }]);
+        }];
+        setImages(loadedImages);
         setCurrentImageIndex(0);
       }
+      
+      // Store original images for change detection
+      setOriginalImages([...loadedImages]);
 
       // Load exhibition information if artwork is published
       if (data.status === "published") {
@@ -197,6 +218,45 @@ export function ArtworkEditPage() {
     }
   }, [allImages.length, currentImageIndex]);
 
+  // Check if there are any changes to the artwork
+  const hasChanges = (): boolean => {
+    if (!originalFormData) return false;
+    
+    // Check form data changes
+    const formDataChanged = 
+      formData.title !== originalFormData.title ||
+      formData.price !== originalFormData.price ||
+      formData.lease_price !== originalFormData.lease_price ||
+      formData.medium !== originalFormData.medium ||
+      formData.year !== originalFormData.year ||
+      formData.width !== originalFormData.width ||
+      formData.height !== originalFormData.height ||
+      formData.depth !== originalFormData.depth ||
+      formData.weight !== originalFormData.weight ||
+      formData.size_class !== originalFormData.size_class ||
+      formData.support !== originalFormData.support ||
+      formData.coating !== originalFormData.coating ||
+      formData.packaging_info !== originalFormData.packaging_info ||
+      formData.maintenance_info !== originalFormData.maintenance_info ||
+      formData.description !== originalFormData.description ||
+      formData.story !== originalFormData.story ||
+      formData.has_frame !== originalFormData.has_frame;
+    
+    // Check style tags changes
+    const styleTagsChanged = 
+      styleTags.length !== originalStyleTags.length ||
+      styleTags.some((tag, index) => tag !== originalStyleTags[index]) ||
+      originalStyleTags.some((tag, index) => tag !== styleTags[index]);
+    
+    // Check AI generated flag changes
+    const aiGeneratedChanged = isAIGenerated !== originalIsAIGenerated;
+    
+    // Check image changes (new images added or existing images deleted)
+    const imagesChanged = newImageFiles.length > 0 || imagesToDelete.length > 0;
+    
+    return formDataChanged || styleTagsChanged || aiGeneratedChanged || imagesChanged;
+  };
+
   // Auto-play carousel
   useEffect(() => {
     if (allImages.length <= 1) return; // Don't auto-play if only one image
@@ -229,14 +289,29 @@ export function ArtworkEditPage() {
   const handleDeleteImage = (imageId: string) => {
     // Only delete existing images (not new uploads)
     const imageToDelete = images.find((img) => img.id === imageId);
-    if (imageToDelete) {
-      setImages((prev) => prev.filter((img) => img.id !== imageId));
-      setImagesToDelete((prev) => [...prev, imageId]);
-      // Adjust carousel index if needed
-      const newImagesCount = images.length - 1;
-      if (currentImageIndex >= newImagesCount) {
-        setCurrentImageIndex(Math.max(0, newImagesCount - 1));
-      }
+    if (!imageToDelete) return;
+
+    // Calculate how many images would remain after deletion
+    // Existing images that won't be deleted (excluding the one being deleted)
+    const remainingExistingImages = images.length - imagesToDelete.length - 1;
+    // New images being added
+    const newImagesCount = newImageFiles.length;
+    // Total images after deletion
+    const totalImagesAfterDeletion = remainingExistingImages + newImagesCount;
+
+    // Prevent deletion if this would leave the artwork with no images
+    if (totalImagesAfterDeletion === 0) {
+      toast.error("作品には少なくとも1枚の画像が必要です");
+      return;
+    }
+
+    // Proceed with deletion
+    setImages((prev) => prev.filter((img) => img.id !== imageId));
+    setImagesToDelete((prev) => [...prev, imageId]);
+    // Adjust carousel index if needed
+    const newImagesCountAfterDelete = images.length - 1;
+    if (currentImageIndex >= newImagesCountAfterDelete) {
+      setCurrentImageIndex(Math.max(0, newImagesCountAfterDelete - 1));
     }
   };
 
@@ -344,7 +419,7 @@ export function ArtworkEditPage() {
       setNewImageFiles([]);
       setImagesToDelete([]);
       
-      // Reload artwork to get updated data
+      // Reload artwork to get updated data (this will also update original data)
       await loadArtwork();
     } catch (error: any) {
       console.error("Failed to update artwork:", error);
@@ -1427,7 +1502,7 @@ export function ArtworkEditPage() {
                       type="submit"
                       size="lg"
                       className="flex-1 w-full sm:w-auto bg-primary hover:bg-primary/90 text-sm sm:text-base"
-                      disabled={isSaving}
+                      disabled={isSaving || !hasChanges()}
                     >
                       {isSaving ? (
                         <>

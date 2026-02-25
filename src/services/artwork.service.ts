@@ -98,15 +98,48 @@ export const artworkService = {
     search?: string;
     min_price?: number;
     max_price?: number;
-    size_class?: string;
-    medium?: string;
+    min_lease_price?: number;
+    max_lease_price?: number;
+    size_class?: string[];
+    medium?: string[];
+    support?: string[];
+    min_width?: number;
+    max_width?: number;
+    min_height?: number;
+    max_height?: number;
+    min_depth?: number;
+    max_depth?: number;
+    min_weight?: number;
+    max_weight?: number;
+    year_from?: number;
+    year_to?: number;
+    has_frame?: boolean;
+    is_ai_generated?: boolean;
+    style_tags?: string[];
+    min_view_count?: number;
+    max_view_count?: number;
+    min_favorite_count?: number;
+    max_favorite_count?: number;
+    min_inquiry_count?: number;
+    max_inquiry_count?: number;
+    date_type?: "created_at" | "published_at" | "updated_at";
+    date_from?: string;
+    date_to?: string;
     sort_by?: string;
+    sort_order?: "asc" | "desc";
   }): Promise<ArtworkListResponse> {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined) {
-          queryParams.append(key, String(value));
+        if (value !== undefined && value !== null && value !== "") {
+          // Handle arrays
+          if (Array.isArray(value)) {
+            value.forEach((item) => {
+              queryParams.append(key, String(item));
+            });
+          } else {
+            queryParams.append(key, String(value));
+          }
         }
       });
     }
@@ -151,6 +184,16 @@ export const artworkService = {
     if (data.coating !== undefined) formData.append("coating", data.coating);
     if (data.packaging_info !== undefined) formData.append("packaging_info", data.packaging_info);
     if (data.maintenance_info !== undefined) formData.append("maintenance_info", data.maintenance_info);
+    
+    // Style tags - send as JSON string array
+    if (data.style_tags !== undefined && Array.isArray(data.style_tags)) {
+      formData.append("style_tags", JSON.stringify(data.style_tags));
+    }
+    
+    // AI generated flag
+    if (data.is_ai_generated !== undefined) {
+      formData.append("is_ai_generated", String(data.is_ai_generated));
+    }
 
     // Add images
     images.forEach((file) => {
@@ -179,6 +222,24 @@ export const artworkService = {
    */
   async unpublishArtwork(artworkId: string): Promise<Artwork> {
     return api.post<Artwork>(`/artworks/${artworkId}/unpublish`, {});
+  },
+
+  /**
+   * Batch publish multiple artworks
+   */
+  async batchPublishArtworks(artworkIds: string[]): Promise<{
+    total: number;
+    successful: number;
+    failed: number;
+    results: Array<{
+      artwork_id: string;
+      success: boolean;
+      message?: string;
+    }>;
+  }> {
+    return api.post("/artworks/batch/publish", {
+      artwork_ids: artworkIds,
+    });
   },
 
   /**

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { motion } from "motion/react";
+import { motion, AnimatePresence } from "motion/react";
 import {
   ImageIcon,
   Video,
@@ -23,6 +23,13 @@ import {
   Plus,
   Building2,
   RotateCcw,
+  ChevronLeft,
+  ChevronRight,
+  Search,
+  Filter,
+  X,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 
 import { useAuth } from "@/contexts/AuthContext";
@@ -37,11 +44,25 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { ArtistReturnRequestDialog } from "@/components/ArtistReturnRequestDialog";
 import { artistService, type ArtistProfile } from "@/services/artist.service";
 import { userService } from "@/services/user.service";
 import { artworkService, type Artwork as ArtworkAPI } from "@/services/artwork.service";
 import { toast } from "sonner";
+import { ImageWithFallback } from "@/components/common/ImageWithFallback";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 // モックデータ
 const mockStats = {
@@ -211,9 +232,10 @@ export function ArtistDashboard() {
   // Initialize tab from URL hash, default to "dashboard"
   const getInitialTab = (): string => {
     const hash = window.location.hash;
-    const parts = hash.split("#").filter(p => p.length > 0);
+    const parts = hash.split("#").filter((p) => p.length > 0);
     if (parts.length > 1) {
-      const tabHash = parts[parts.length - 1];
+      const lastPart = parts[parts.length - 1];
+      const [tabHash] = lastPart.split("?");
       if (["dashboard", "artworks", "profile", "revenue"].includes(tabHash)) {
         return tabHash;
       }
@@ -224,15 +246,74 @@ export function ArtistDashboard() {
   const [selectedTab, setSelectedTab] = useState(getInitialTab());
   const [artworkFilter, setArtworkFilter] = useState<string>("all");
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  
+  // Filter state
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filters, setFilters] = useState({
+    // Date ranges
+    dateType: "created_at" as "created_at" | "published_at" | "updated_at",
+    dateFrom: "",
+    dateTo: "",
+    // Price ranges
+    minPrice: "",
+    maxPrice: "",
+    minLeasePrice: "",
+    maxLeasePrice: "",
+    // Size & dimensions
+    sizeClass: [] as string[],
+    minWidth: "",
+    maxWidth: "",
+    minHeight: "",
+    maxHeight: "",
+    minDepth: "",
+    maxDepth: "",
+    minWeight: "",
+    maxWeight: "",
+    // Technique
+    medium: [] as string[],
+    support: [] as string[],
+    // Year
+    yearFrom: "",
+    yearTo: "",
+    // Properties
+    hasFrame: undefined as boolean | undefined,
+    isAIGenerated: undefined as boolean | undefined,
+    // Style tags
+    styleTags: [] as string[],
+    // Engagement
+    minViewCount: "",
+    maxViewCount: "",
+    minFavoriteCount: "",
+    maxFavoriteCount: "",
+    minInquiryCount: "",
+    maxInquiryCount: "",
+    // Sort
+    sortBy: "created_at",
+    sortOrder: "desc" as "asc" | "desc",
+  });
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [returnRequestDialogOpen, setReturnRequestDialogOpen] = useState(false);
   const [selectedArtworkForReturn, setSelectedArtworkForReturn] = useState<any>(null);
   const [artworks, setArtworks] = useState<any[]>([]);
   const [isLoadingArtworks, setIsLoadingArtworks] = useState(false);
+  // Pagination state for artworks list
+  const [artworkPage, setArtworkPage] = useState(1);
+  const [artworkPageSize, setArtworkPageSize] = useState(20);
+  const [artworkTotal, setArtworkTotal] = useState(0);
+  // URL/filters initialization flag to avoid overwriting URL params before reading them
+  const [artworkFiltersInitialized, setArtworkFiltersInitialized] = useState(false);
+  
+  // Carousel state for each artwork (key: artwork.id, value: { currentIndex, isAutoPlaying, isHovering })
+  const [artworkCarousels, setArtworkCarousels] = useState<Map<string, { currentIndex: number; isAutoPlaying: boolean; isHovering: boolean }>>(new Map());
+  
+  // Debounced search state - must be defined before useEffect that uses it
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   
   // Profile state
   const [profileData, setProfileData] = useState<ArtistProfile | null>(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(false);
+  const [deleteImageDialogOpen, setDeleteImageDialogOpen] = useState(false);
   const [profileFormData, setProfileFormData] = useState({
     name: "",
     phone_number: "",
@@ -276,15 +357,16 @@ export function ArtistDashboard() {
     window.scrollTo(0, 0);
   }, [selectedTab]);
 
-  // Extract tab hash from URL (handles #/dashboard#profile format)
+  // Extract tab hash from URL (handles #/dashboard#profile and query like #/dashboard#artworks?page=2)
   const getTabFromHash = (): string => {
     const hash = window.location.hash;
     // Check if there's a nested hash (e.g., #/dashboard#profile)
     // Split by # and get the last part (the tab name)
-    const parts = hash.split("#").filter(p => p.length > 0);
+    const parts = hash.split("#").filter((p) => p.length > 0);
     if (parts.length > 1) {
       // Last part is the tab hash (after the route hash)
-      const tabHash = parts[parts.length - 1];
+      const lastPart = parts[parts.length - 1];
+      const [tabHash] = lastPart.split("?");
       if (["dashboard", "artworks", "profile", "revenue"].includes(tabHash)) {
         return tabHash;
       }
@@ -300,8 +382,12 @@ export function ArtistDashboard() {
     
     // If no tab hash exists, set default "dashboard" hash
     const currentHash = window.location.hash;
-    const parts = currentHash.split("#").filter(p => p.length > 0);
-    const hasTabHash = parts.length > 1 && ["dashboard", "artworks", "profile", "revenue"].includes(parts[parts.length - 1]);
+    const parts = currentHash.split("#").filter((p) => p.length > 0);
+    const lastPart = parts.length > 1 ? parts[parts.length - 1] : "";
+    const [tabPart] = lastPart.split("?");
+    const hasTabHash =
+      parts.length > 1 &&
+      ["dashboard", "artworks", "profile", "revenue"].includes(tabPart);
     
     if (!hasTabHash) {
       const routeHash = parts.length > 0 ? `#${parts.join("#")}` : "#/dashboard";
@@ -329,10 +415,14 @@ export function ArtistDashboard() {
     // Update URL hash while preserving the route hash
     const currentHash = window.location.hash;
     // Split by # and keep all parts except the last one (which is the tab)
-    const parts = currentHash.split("#").filter(p => p.length > 0);
-    // Remove the last part if it's a valid tab name
-    if (parts.length > 1 && ["dashboard", "artworks", "profile", "revenue"].includes(parts[parts.length - 1])) {
-      parts.pop();
+    const parts = currentHash.split("#").filter((p) => p.length > 0);
+    // Remove the last part if it's a valid tab name (ignore any query string)
+    if (parts.length > 1) {
+      const lastPart = parts[parts.length - 1];
+      const [tabPart] = lastPart.split("?");
+      if (["dashboard", "artworks", "profile", "revenue"].includes(tabPart)) {
+        parts.pop();
+      }
     }
     // Reconstruct hash with route + new tab
     const routeHash = parts.length > 0 ? `#${parts.join("#")}` : "#/dashboard";
@@ -340,6 +430,241 @@ export function ArtistDashboard() {
     window.history.replaceState(null, "", `${routeHash}#${value}`);
     window.scrollTo(0, 0);
   };
+
+  // Sync artwork filters & pagination to URL hash query so state is preserved on refresh
+  useEffect(() => {
+    if (selectedTab !== "artworks" || !artworkFiltersInitialized) return;
+
+    const hash = window.location.hash;
+    const parts = hash.split("#").filter((p) => p.length > 0);
+    if (parts.length === 0) return;
+
+    const routePart = parts[0] || "/dashboard";
+
+    const params = new URLSearchParams();
+
+    // Pagination
+    if (artworkPage > 1) {
+      params.set("page", String(artworkPage));
+    }
+    if (artworkPageSize && artworkPageSize !== 20) {
+      params.set("page_size", String(artworkPageSize));
+    }
+
+    // Status filter
+    if (artworkFilter && artworkFilter !== "all") {
+      const statusParam = artworkFilter === "returned" ? "recalled" : artworkFilter;
+      params.set("status", statusParam);
+    }
+
+    // Search
+    if (searchQuery) {
+      params.set("search", searchQuery);
+    }
+
+    // Date range
+    if (filters.dateType) params.set("date_type", filters.dateType);
+    if (filters.dateFrom) params.set("date_from", filters.dateFrom);
+    if (filters.dateTo) params.set("date_to", filters.dateTo);
+
+    // Numeric ranges
+    const rangeMappings: [keyof typeof filters, string][] = [
+      ["minPrice", "min_price"],
+      ["maxPrice", "max_price"],
+      ["minLeasePrice", "min_lease_price"],
+      ["maxLeasePrice", "max_lease_price"],
+      ["minWidth", "min_width"],
+      ["maxWidth", "max_width"],
+      ["minHeight", "min_height"],
+      ["maxHeight", "max_height"],
+      ["minDepth", "min_depth"],
+      ["maxDepth", "max_depth"],
+      ["minWeight", "min_weight"],
+      ["maxWeight", "max_weight"],
+      ["minViewCount", "min_view_count"],
+      ["maxViewCount", "max_view_count"],
+      ["minFavoriteCount", "min_favorite_count"],
+      ["maxFavoriteCount", "max_favorite_count"],
+      ["minInquiryCount", "min_inquiry_count"],
+      ["maxInquiryCount", "max_inquiry_count"],
+    ];
+    rangeMappings.forEach(([field, key]) => {
+      const value = (filters as any)[field];
+      if (value) {
+        params.set(key, String(value));
+      }
+    });
+
+    // Year range
+    if (filters.yearFrom) params.set("year_from", filters.yearFrom);
+    if (filters.yearTo) params.set("year_to", filters.yearTo);
+
+    // Multi-value filters
+    if (filters.sizeClass?.length) {
+      filters.sizeClass.forEach((v) => params.append("size_class", v));
+    }
+    if (filters.medium?.length) {
+      filters.medium.forEach((v) => params.append("medium", v));
+    }
+    if (filters.support?.length) {
+      filters.support.forEach((v) => params.append("support", v));
+    }
+    if (filters.styleTags?.length) {
+      filters.styleTags.forEach((v) => params.append("style_tags", v));
+    }
+
+    // Boolean filters
+    if (filters.hasFrame === true) params.set("has_frame", "true");
+    if (filters.isAIGenerated === true) params.set("is_ai_generated", "true");
+
+    // Sort
+    if (filters.sortBy) params.set("sort_by", filters.sortBy);
+    if (filters.sortOrder) params.set("sort_order", filters.sortOrder);
+
+    const queryString = params.toString();
+    const lastPart = queryString ? `artworks?${queryString}` : "artworks";
+    const newHash = `#${[routePart, lastPart].join("#")}`;
+
+    if (newHash !== hash) {
+      window.history.replaceState(null, "", newHash);
+    }
+  }, [selectedTab, artworkPage, artworkPageSize, artworkFilter, searchQuery, filters, artworkFiltersInitialized]);
+
+  // Initialize artwork filters & pagination from URL hash query (for refresh/back)
+  useEffect(() => {
+    if (selectedTab !== "artworks") {
+      // Reset initialization flag when switching away from artworks tab
+      setArtworkFiltersInitialized(false);
+      return;
+    }
+
+    const hash = window.location.hash;
+    const parts = hash.split("#").filter((p) => p.length > 0);
+    if (parts.length < 2) {
+      // No query string, but still mark as initialized so future changes sync to URL
+      setArtworkFiltersInitialized(true);
+      return;
+    }
+
+    const lastPart = parts[parts.length - 1];
+    const [tabHash, queryString] = lastPart.split("?");
+    if (tabHash !== "artworks") {
+      setArtworkFiltersInitialized(true);
+      return;
+    }
+
+    // If no query string, mark as initialized and use defaults
+    if (!queryString) {
+      setArtworkFiltersInitialized(true);
+      return;
+    }
+
+    const params = new URLSearchParams(queryString);
+
+    const pageParam = params.get("page");
+    if (pageParam) {
+      const p = parseInt(pageParam, 10);
+      if (!isNaN(p) && p > 0) {
+        setArtworkPage(p);
+      }
+    }
+
+    const pageSizeParam = params.get("page_size");
+    if (pageSizeParam) {
+      const s = parseInt(pageSizeParam, 10);
+      if (!isNaN(s) && s > 0) {
+        setArtworkPageSize(s);
+      }
+    }
+
+    const statusParam = params.get("status");
+    if (statusParam) {
+      const filter =
+        statusParam === "recalled" ? "returned" : statusParam;
+      if (
+        ["all", "draft", "published", "exhibited", "sold", "returned"].includes(
+          filter
+        )
+      ) {
+        setArtworkFilter(filter);
+      }
+    }
+
+    const searchParam = params.get("search");
+    if (searchParam !== null) {
+      setSearchQuery(searchParam);
+    }
+
+    setFilters((prev) => {
+      const next = { ...prev };
+
+      const dateTypeParam = params.get("date_type");
+      if (
+        dateTypeParam === "created_at" ||
+        dateTypeParam === "published_at" ||
+        dateTypeParam === "updated_at"
+      ) {
+        next.dateType = dateTypeParam as "created_at" | "published_at" | "updated_at";
+      }
+
+      const mapping: [string, keyof typeof next][] = [
+        ["date_from", "dateFrom"],
+        ["date_to", "dateTo"],
+        ["min_price", "minPrice"],
+        ["max_price", "maxPrice"],
+        ["min_lease_price", "minLeasePrice"],
+        ["max_lease_price", "maxLeasePrice"],
+        ["min_width", "minWidth"],
+        ["max_width", "maxWidth"],
+        ["min_height", "minHeight"],
+        ["max_height", "maxHeight"],
+        ["min_depth", "minDepth"],
+        ["max_depth", "maxDepth"],
+        ["min_weight", "minWeight"],
+        ["max_weight", "maxWeight"],
+        ["min_view_count", "minViewCount"],
+        ["max_view_count", "maxViewCount"],
+        ["min_favorite_count", "minFavoriteCount"],
+        ["max_favorite_count", "maxFavoriteCount"],
+        ["min_inquiry_count", "minInquiryCount"],
+        ["max_inquiry_count", "maxInquiryCount"],
+        ["year_from", "yearFrom"],
+        ["year_to", "yearTo"],
+      ];
+      mapping.forEach(([paramKey, field]) => {
+        const v = params.get(paramKey);
+        if (v !== null) {
+          (next as any)[field] = v;
+        }
+      });
+
+      next.sizeClass = params.getAll("size_class");
+      next.medium = params.getAll("medium");
+      next.support = params.getAll("support");
+      next.styleTags = params.getAll("style_tags");
+
+      const hasFrameParam = params.get("has_frame");
+      next.hasFrame = hasFrameParam === "true" ? true : undefined;
+
+      const aiParam = params.get("is_ai_generated");
+      next.isAIGenerated = aiParam === "true" ? true : undefined;
+
+      // Sort parameters
+      const sortByParam = params.get("sort_by");
+      if (sortByParam) {
+        next.sortBy = sortByParam;
+      }
+      const sortOrderParam = params.get("sort_order");
+      if (sortOrderParam === "asc" || sortOrderParam === "desc") {
+        next.sortOrder = sortOrderParam;
+      }
+
+      return next;
+    });
+
+    // Mark filters as initialized so subsequent changes can safely sync back to URL
+    setArtworkFiltersInitialized(true);
+  }, [selectedTab, location]);
 
   // Check if profile has changes
   const hasProfileChanges = () => {
@@ -360,14 +685,22 @@ export function ArtistDashboard() {
     }
   }, [selectedTab, isAuthenticated]);
 
-  // Load artworks when artworks tab is selected
+  // Debounced search effect - must be defined before useEffect that uses debouncedSearch
+  useEffect(() => {
+      const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 300);
+      return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Load artworks when artworks tab is selected or filters change
   useEffect(() => {
     if (selectedTab === "artworks" && isAuthenticated && currentUser?.id) {
       loadArtworks();
     }
-  }, [selectedTab, isAuthenticated, currentUser]);
+  }, [selectedTab, isAuthenticated, currentUser, artworkFilter, debouncedSearch, filters, artworkPage, artworkPageSize]);
 
-  // Load artworks from backend
+  // Load artworks from backend with filters
   const loadArtworks = async () => {
     if (!currentUser?.id) {
       console.warn("Cannot load artworks: user ID not available");
@@ -376,34 +709,177 @@ export function ArtistDashboard() {
 
     setIsLoadingArtworks(true);
     try {
-      // Fetch all artworks for the current artist (no status filter to get all)
-      const response = await artworkService.listArtworks({
-        page: 1,
-        page_size: 100, // Get all artworks
+      // Build filter parameters from filter state
+      const filterParams: any = {
+        page: artworkPage,
+        page_size: artworkPageSize,
         artist_id: currentUser.id, // Filter by current artist
-      });
+      };
+
+      // Status filter (from artworkFilter state)
+      if (artworkFilter !== "all") {
+        filterParams.status = artworkFilter === "returned" ? "recalled" : artworkFilter;
+      }
+
+      // Search query
+      if (debouncedSearch) {
+        filterParams.search = debouncedSearch;
+      }
+
+      // Date range
+      if (filters.dateFrom) {
+        filterParams.date_from = filters.dateFrom;
+        filterParams.date_type = filters.dateType;
+      }
+      if (filters.dateTo) {
+        filterParams.date_to = filters.dateTo;
+        filterParams.date_type = filters.dateType;
+      }
+
+      // Price ranges
+      if (filters.minPrice) {
+        filterParams.min_price = parseFloat(filters.minPrice);
+      }
+      if (filters.maxPrice) {
+        filterParams.max_price = parseFloat(filters.maxPrice);
+      }
+      if (filters.minLeasePrice) {
+        filterParams.min_lease_price = parseFloat(filters.minLeasePrice);
+      }
+      if (filters.maxLeasePrice) {
+        filterParams.max_lease_price = parseFloat(filters.maxLeasePrice);
+      }
+
+      // Size class
+      if (filters.sizeClass.length > 0) {
+        filterParams.size_class = filters.sizeClass;
+      }
+
+      // Dimensions
+      if (filters.minWidth) {
+        filterParams.min_width = parseFloat(filters.minWidth);
+      }
+      if (filters.maxWidth) {
+        filterParams.max_width = parseFloat(filters.maxWidth);
+      }
+      if (filters.minHeight) {
+        filterParams.min_height = parseFloat(filters.minHeight);
+      }
+      if (filters.maxHeight) {
+        filterParams.max_height = parseFloat(filters.maxHeight);
+      }
+      if (filters.minDepth) {
+        filterParams.min_depth = parseFloat(filters.minDepth);
+      }
+      if (filters.maxDepth) {
+        filterParams.max_depth = parseFloat(filters.maxDepth);
+      }
+      if (filters.minWeight) {
+        filterParams.min_weight = parseFloat(filters.minWeight);
+      }
+      if (filters.maxWeight) {
+        filterParams.max_weight = parseFloat(filters.maxWeight);
+      }
+
+      // Medium and support
+      if (filters.medium.length > 0) {
+        filterParams.medium = filters.medium;
+      }
+      if (filters.support.length > 0) {
+        filterParams.support = filters.support;
+      }
+
+      // Year range
+      if (filters.yearFrom) {
+        filterParams.year_from = parseInt(filters.yearFrom);
+      }
+      if (filters.yearTo) {
+        filterParams.year_to = parseInt(filters.yearTo);
+      }
+
+      // Properties
+      if (filters.hasFrame !== undefined) {
+        filterParams.has_frame = filters.hasFrame;
+      }
+      if (filters.isAIGenerated !== undefined) {
+        filterParams.is_ai_generated = filters.isAIGenerated;
+      }
+
+      // Style tags
+      if (filters.styleTags.length > 0) {
+        filterParams.style_tags = filters.styleTags;
+      }
+
+      // Engagement metrics
+      if (filters.minViewCount) {
+        filterParams.min_view_count = parseInt(filters.minViewCount);
+      }
+      if (filters.maxViewCount) {
+        filterParams.max_view_count = parseInt(filters.maxViewCount);
+      }
+      if (filters.minFavoriteCount) {
+        filterParams.min_favorite_count = parseInt(filters.minFavoriteCount);
+      }
+      if (filters.maxFavoriteCount) {
+        filterParams.max_favorite_count = parseInt(filters.maxFavoriteCount);
+      }
+      if (filters.minInquiryCount) {
+        filterParams.min_inquiry_count = parseInt(filters.minInquiryCount);
+      }
+      if (filters.maxInquiryCount) {
+        filterParams.max_inquiry_count = parseInt(filters.maxInquiryCount);
+      }
+
+      // Sort
+      filterParams.sort_by = filters.sortBy;
+      filterParams.sort_order = filters.sortOrder;
+
+      // Fetch artworks with filters
+      const response = await artworkService.listArtworks(filterParams);
 
       // Map API response to match the expected format
-      const mappedArtworks = response.items.map((artwork: ArtworkAPI) => ({
-        id: artwork.id,
-        name: artwork.title,
-        status: artwork.status,
-        price: Number(artwork.price),
-        location: undefined, // Will be populated from space assignments later
-        scans: artwork.view_count || 0,
-        exhibitStart: undefined, // Will be populated from space assignments later
-        hasImage: !!artwork.main_image_url,
-        isVideo: false, // Can be determined from image URL or file type later
-        tags: [], // Can be populated from style tags later
-        buyer: undefined, // Will be populated from orders later
-        soldDate: undefined, // Will be populated from orders later
-        paymentStatus: undefined, // Will be populated from orders later
-        exhibitEnd: undefined, // Will be populated from space assignments later
-        main_image_url: artwork.main_image_url,
-        custom_id: artwork.custom_id,
-      }));
+      const mappedArtworks = response.items.map((artwork: ArtworkAPI) => {
+        // Get all images for the artwork
+        const artworkImages = artwork.images && artwork.images.length > 0
+          ? artwork.images.map(img => img.image_url)
+          : artwork.main_image_url
+          ? [artwork.main_image_url]
+          : [];
+
+        return {
+          id: artwork.id,
+          name: artwork.title,
+          status: artwork.status,
+          price: Number(artwork.price),
+          location: undefined, // Will be populated from space assignments later
+          scans: artwork.view_count || 0,
+          exhibitStart: undefined, // Will be populated from space assignments later
+          hasImage: !!artwork.main_image_url,
+          isVideo: false, // Can be determined from image URL or file type later
+          tags: [], // Can be populated from style tags later
+          buyer: undefined, // Will be populated from orders later
+          soldDate: undefined, // Will be populated from orders later
+          paymentStatus: undefined, // Will be populated from orders later
+          exhibitEnd: undefined, // Will be populated from space assignments later
+          main_image_url: artwork.main_image_url,
+          images: artworkImages, // Array of all image URLs for carousel
+          custom_id: artwork.custom_id,
+        };
+      });
 
       setArtworks(mappedArtworks);
+      setArtworkTotal(response.total ?? 0);
+      
+      // Initialize carousel state for each artwork
+      const newCarousels = new Map<string, { currentIndex: number; isAutoPlaying: boolean; isHovering: boolean }>();
+      mappedArtworks.forEach((artwork: any) => {
+        newCarousels.set(artwork.id, {
+          currentIndex: 0,
+          isAutoPlaying: true,
+          isHovering: false,
+        });
+      });
+      setArtworkCarousels(newCarousels);
     } catch (error: any) {
       console.error("Failed to load artworks:", error);
       toast.error("作品の読み込みに失敗しました");
@@ -411,6 +887,108 @@ export function ArtistDashboard() {
     } finally {
       setIsLoadingArtworks(false);
     }
+  };
+  
+  // Auto-play carousel for each artwork
+  useEffect(() => {
+    const intervals: Map<string, NodeJS.Timeout> = new Map();
+    
+    artworkCarousels.forEach((carouselState, artworkId) => {
+      const artwork = artworks.find(a => a.id === artworkId);
+      if (!artwork || !artwork.images || artwork.images.length <= 1) return;
+      
+      if (carouselState.isAutoPlaying && !carouselState.isHovering) {
+        const interval = setInterval(() => {
+          setArtworkCarousels(prev => {
+            const newMap = new Map(prev);
+            const current = newMap.get(artworkId);
+            if (current) {
+              newMap.set(artworkId, {
+                ...current,
+                currentIndex: (current.currentIndex + 1) % artwork.images.length,
+              });
+            }
+            return newMap;
+          });
+        }, 4000); // Change image every 4 seconds
+        
+        intervals.set(artworkId, interval);
+      }
+    });
+    
+    return () => {
+      intervals.forEach(interval => clearInterval(interval));
+    };
+  }, [artworkCarousels, artworks]);
+  
+  // Helper functions for carousel control
+  const handleCarouselHover = (artworkId: string, isHovering: boolean) => {
+    setArtworkCarousels(prev => {
+      const newMap = new Map(prev);
+      const current = newMap.get(artworkId);
+      if (current) {
+        newMap.set(artworkId, { ...current, isHovering });
+      }
+      return newMap;
+    });
+  };
+  
+  const handleCarouselNext = (artworkId: string) => {
+    const artwork = artworks.find(a => a.id === artworkId);
+    if (!artwork || !artwork.images) return;
+    
+    setArtworkCarousels(prev => {
+      const newMap = new Map(prev);
+      const current = newMap.get(artworkId);
+      if (current) {
+        newMap.set(artworkId, {
+          ...current,
+          currentIndex: (current.currentIndex + 1) % artwork.images.length,
+          isAutoPlaying: false, // Pause auto-play on manual interaction
+        });
+        // Resume auto-play after 10 seconds
+        setTimeout(() => {
+          setArtworkCarousels(prevMap => {
+            const updatedMap = new Map(prevMap);
+            const updated = updatedMap.get(artworkId);
+            if (updated) {
+              updatedMap.set(artworkId, { ...updated, isAutoPlaying: true });
+            }
+            return updatedMap;
+          });
+        }, 10000);
+      }
+      return newMap;
+    });
+  };
+  
+  const handleCarouselPrev = (artworkId: string) => {
+    const artwork = artworks.find(a => a.id === artworkId);
+    if (!artwork || !artwork.images) return;
+    
+    setArtworkCarousels(prev => {
+      const newMap = new Map(prev);
+      const current = newMap.get(artworkId);
+      if (current) {
+        newMap.set(artworkId, {
+          ...current,
+          currentIndex: (current.currentIndex - 1 + artwork.images.length) % artwork.images.length,
+          isAutoPlaying: false, // Pause auto-play on manual interaction
+        });
+        // Resume auto-play after 10 seconds
+        setTimeout(() => {
+          setArtworkCarousels(prevMap => {
+            const updatedMap = new Map(prevMap);
+            const updated = updatedMap.get(artworkId);
+            if (updated) {
+              updatedMap.set(artworkId, { ...updated, isAutoPlaying: true });
+            }
+            return updatedMap;
+          });
+        }, 10000);
+      }
+      return newMap;
+    });
   };
 
   // Load profile data from backend
@@ -493,6 +1071,33 @@ export function ArtistDashboard() {
     }
   };
 
+  // プロフィール写真の削除確認ダイアログを開く
+  const handleDeleteProfileImageClick = () => {
+    if (!profileImage) {
+      return;
+    }
+    setDeleteImageDialogOpen(true);
+  };
+
+  // プロフィール写真の削除実行
+  const handleDeleteProfileImage = async () => {
+    try {
+      setIsSavingProfile(true);
+      setDeleteImageDialogOpen(false);
+      await userService.deleteProfileImage();
+      setProfileImage(null);
+      toast.success("プロフィール写真を削除しました");
+      
+      // Reload profile data to get updated image URL
+      await loadProfileData();
+    } catch (error: any) {
+      console.error("Failed to delete profile image:", error);
+      toast.error("プロフィール写真の削除に失敗しました");
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
   // Save profile changes
   const handleSaveProfile = async () => {
     try {
@@ -546,16 +1151,8 @@ export function ArtistDashboard() {
     }
   };
 
-  const filteredArtworks =
-    artworkFilter === "all"
-      ? artworks
-      : artworks.filter((a) => {
-          // Map "returned" filter to "recalled" status
-          if (artworkFilter === "returned") {
-            return a.status === "recalled";
-          }
-          return a.status === artworkFilter;
-        });
+  // Artworks are already filtered by the backend API, so we can use them directly
+  const filteredArtworks = artworks;
 
   const exhibitedArtworks = artworks.filter((a) => a.status === "exhibited");
 
@@ -564,6 +1161,193 @@ export function ArtistDashboard() {
     setSelectedArtworkForReturn(artwork);
     setReturnRequestDialogOpen(true);
   };
+  
+  // Filter helper functions
+  const resetFilters = () => {
+    // Reset to first page when filters are cleared
+    setArtworkPage(1);
+    setSearchQuery("");
+    setFilters({
+      dateType: "created_at",
+      dateFrom: "",
+      dateTo: "",
+      minPrice: "",
+      maxPrice: "",
+      minLeasePrice: "",
+      maxLeasePrice: "",
+      sizeClass: [],
+      minWidth: "",
+      maxWidth: "",
+      minHeight: "",
+      maxHeight: "",
+      minDepth: "",
+      maxDepth: "",
+      minWeight: "",
+      maxWeight: "",
+      medium: [],
+      support: [],
+      yearFrom: "",
+      yearTo: "",
+      hasFrame: undefined,
+      isAIGenerated: undefined,
+      styleTags: [],
+      minViewCount: "",
+      maxViewCount: "",
+      minFavoriteCount: "",
+      maxFavoriteCount: "",
+      minInquiryCount: "",
+      maxInquiryCount: "",
+      sortBy: "created_at",
+      sortOrder: "desc",
+    });
+    setArtworkFilter("all");
+  };
+  
+  const toggleSizeClass = (size: string) => {
+    setFilters(prev => ({
+      ...prev,
+      sizeClass: prev.sizeClass.includes(size)
+        ? prev.sizeClass.filter(s => s !== size)
+        : [...prev.sizeClass, size],
+    }));
+  };
+  
+  const toggleMedium = (medium: string) => {
+    setFilters(prev => ({
+      ...prev,
+      medium: prev.medium.includes(medium)
+        ? prev.medium.filter(m => m !== medium)
+        : [...prev.medium, medium],
+    }));
+  };
+  
+  const toggleSupport = (support: string) => {
+    setFilters(prev => ({
+      ...prev,
+      support: prev.support.includes(support)
+        ? prev.support.filter(s => s !== support)
+        : [...prev.support, support],
+    }));
+  };
+  
+  const toggleStyleTag = (tag: string) => {
+    setFilters(prev => ({
+      ...prev,
+      styleTags: prev.styleTags.includes(tag)
+        ? prev.styleTags.filter(t => t !== tag)
+        : [...prev.styleTags, tag],
+    }));
+  };
+  
+  const applyDatePreset = (preset: string) => {
+    const today = new Date();
+    let from = "";
+    let to = new Date().toISOString().split("T")[0];
+    
+    switch (preset) {
+      case "today":
+        from = today.toISOString().split("T")[0];
+        break;
+      case "week":
+        const weekAgo = new Date(today);
+        weekAgo.setDate(today.getDate() - 7);
+        from = weekAgo.toISOString().split("T")[0];
+        break;
+      case "month":
+        const monthAgo = new Date(today);
+        monthAgo.setMonth(today.getMonth() - 1);
+        from = monthAgo.toISOString().split("T")[0];
+        break;
+      case "3months":
+        const threeMonthsAgo = new Date(today);
+        threeMonthsAgo.setMonth(today.getMonth() - 3);
+        from = threeMonthsAgo.toISOString().split("T")[0];
+        break;
+      case "6months":
+        const sixMonthsAgo = new Date(today);
+        sixMonthsAgo.setMonth(today.getMonth() - 6);
+        from = sixMonthsAgo.toISOString().split("T")[0];
+        break;
+      case "year":
+        const yearAgo = new Date(today);
+        yearAgo.setFullYear(today.getFullYear() - 1);
+        from = yearAgo.toISOString().split("T")[0];
+        break;
+    }
+    
+    setFilters(prev => ({ ...prev, dateFrom: from, dateTo: to }));
+  };
+  
+  const applyYearPreset = (preset: string) => {
+    const currentYear = new Date().getFullYear();
+    let from = "";
+    let to = String(currentYear);
+    
+    switch (preset) {
+      case "thisYear":
+        from = String(currentYear);
+        break;
+      case "lastYear":
+        from = String(currentYear - 1);
+        to = String(currentYear - 1);
+        break;
+      case "5years":
+        from = String(currentYear - 5);
+        break;
+      case "10years":
+        from = String(currentYear - 10);
+        break;
+    }
+    
+    setFilters(prev => ({ ...prev, yearFrom: from, yearTo: to }));
+  };
+  
+  // Options for dropdowns
+  const sizeClassOptions = ["XS", "S", "M", "L", "XL", "XXL"];
+  const mediumOptions = [
+    { value: "oil", label: "油彩" },
+    { value: "acrylic", label: "アクリル" },
+    { value: "watercolor", label: "水彩" },
+    { value: "mixed-media", label: "ミクストメディア" },
+    { value: "digital", label: "デジタル" },
+    { value: "other", label: "その他" },
+  ];
+  const supportOptions = [
+    { value: "canvas", label: "キャンバス" },
+    { value: "paper", label: "紙" },
+    { value: "board", label: "板" },
+    { value: "other", label: "その他" },
+  ];
+  const styleTagOptions = [
+    "抽象", "具象", "風景", "人物", "静物", "現代アート", "伝統", "ポップアート", "ミニマル", "シュールレアリスム"
+  ];
+  const sortOptions = [
+    { value: "created_at_desc", label: "作成日順（新着順）" },
+    { value: "created_at_asc", label: "作成日順（古い順）" },
+    { value: "updated_at_desc", label: "更新日順（新着順）" },
+    { value: "updated_at_asc", label: "更新日順（古い順）" },
+    { value: "published_at_desc", label: "公開日順（新着順）" },
+    { value: "published_at_asc", label: "公開日順（古い順）" },
+    { value: "price_desc", label: "価格順（高い順）" },
+    { value: "price_asc", label: "価格順（安い順）" },
+    { value: "view_count_desc", label: "閲覧数順（多い順）" },
+    { value: "view_count_asc", label: "閲覧数順（少ない順）" },
+    { value: "favorite_count_desc", label: "お気に入り数順（多い順）" },
+    { value: "favorite_count_asc", label: "お気に入り数順（少ない順）" },
+  ];
+  
+  const handleSortChange = (value: string) => {
+    const [sortBy, sortOrder] = value.split("_");
+    const order = sortOrder === "desc" ? "desc" : "asc";
+    setFilters(prev => ({
+      ...prev,
+      sortBy: sortBy === "published" ? "published_at" : sortBy === "view" ? "view_count" : sortBy === "favorite" ? "favorite_count" : sortBy,
+      sortOrder: order,
+    }));
+    setArtworkPage(1);
+  };
+  
+  const currentSortValue = `${filters.sortBy === "published_at" ? "published" : filters.sortBy === "view_count" ? "view" : filters.sortBy === "favorite_count" ? "favorite" : filters.sortBy}_${filters.sortOrder}`;
 
   return (
     <div className="min-h-screen bg-[#F8F6F1]">
@@ -774,15 +1558,87 @@ export function ArtistDashboard() {
 
           {/* 作品一覧タブ */}
           <TabsContent value="artworks" className="space-y-6">
-            {/* フィルターバー */}
+            {/* 検索・フィルターバー */}
             <Card className="bg-white">
               <CardContent className="pt-6">
-                <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-                  <div className="flex flex-wrap gap-2">
+                {/* Top bar: Search, Sort, Filter toggle, Reset, Add button */}
+                <div className="flex flex-col gap-4">
+                  <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+                    {/* Search input */}
+                    <div className="flex-1 w-full sm:w-auto">
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <Input
+                          placeholder="作品名、説明、IDで検索..."
+                          value={searchQuery}
+                          onChange={(e) => {
+                            setSearchQuery(e.target.value);
+                            setArtworkPage(1);
+                          }}
+                          className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary pl-10"
+                        />
+                      </div>
+                    </div>
+                    
+                    {/* Sort dropdown */}
+                    <Select value={currentSortValue} onValueChange={handleSortChange}>
+                      <SelectTrigger className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary w-full sm:w-[200px]">
+                        <SelectValue placeholder="並び替え" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {sortOptions.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    
+                    {/* Filter toggle button */}
+                    <Button
+                      variant="outline"
+                      onClick={() => setIsFilterOpen(!isFilterOpen)}
+                      className="h-11 border-gray-200"
+                    >
+                      <Filter className="w-4 h-4 mr-2" />
+                      <span>フィルター</span>
+                      {isFilterOpen ? (
+                        <ChevronUp className="w-4 h-4 ml-2" />
+                      ) : (
+                        <ChevronDown className="w-4 h-4 ml-2" />
+                      )}
+                    </Button>
+                    
+                    {/* Reset button */}
+                    <Button
+                      variant="outline"
+                      onClick={resetFilters}
+                      className="h-11 border-gray-200"
+                    >
+                      <X className="w-4 h-4 mr-2" />
+                      <span>リセット</span>
+                    </Button>
+                    
+                    {/* Add artwork button */}
+                    <Button
+                      className="bg-gradient-to-r from-[#C3A36D] to-[#D4B478] hover:opacity-90 h-11"
+                      onClick={() => navigate("/signup/artist/artworks")}
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      <span className="hidden sm:inline">新しい作品を登録</span>
+                      <span className="sm:hidden">登録</span>
+                    </Button>
+                  </div>
+                  
+                  {/* Status filter toggles */}
+                  <div className="flex flex-wrap gap-2 pb-2 border-b">
                     <Button
                       variant={artworkFilter === "all" ? "default" : "outline"}
                       size="sm"
-                      onClick={() => setArtworkFilter("all")}
+                      onClick={() => {
+                        setArtworkFilter("all");
+                        setArtworkPage(1);
+                      }}
                       className={artworkFilter === "all" ? "bg-[#C3A36D] hover:bg-[#C3A36D]/90" : ""}
                     >
                       すべて
@@ -790,7 +1646,10 @@ export function ArtistDashboard() {
                     <Button
                       variant={artworkFilter === "draft" ? "default" : "outline"}
                       size="sm"
-                      onClick={() => setArtworkFilter("draft")}
+                      onClick={() => {
+                        setArtworkFilter("draft");
+                        setArtworkPage(1);
+                      }}
                       className={artworkFilter === "draft" ? "bg-gray-500 hover:bg-gray-600" : "border-gray-300"}
                     >
                       未公開
@@ -798,7 +1657,10 @@ export function ArtistDashboard() {
                     <Button
                       variant={artworkFilter === "published" ? "default" : "outline"}
                       size="sm"
-                      onClick={() => setArtworkFilter("published")}
+                      onClick={() => {
+                        setArtworkFilter("published");
+                        setArtworkPage(1);
+                      }}
                       className={artworkFilter === "published" ? "bg-green-500 hover:bg-green-600" : "border-green-200"}
                     >
                       オンライン公開中
@@ -806,7 +1668,10 @@ export function ArtistDashboard() {
                     <Button
                       variant={artworkFilter === "exhibited" ? "default" : "outline"}
                       size="sm"
-                      onClick={() => setArtworkFilter("exhibited")}
+                      onClick={() => {
+                        setArtworkFilter("exhibited");
+                        setArtworkPage(1);
+                      }}
                       className={artworkFilter === "exhibited" ? "bg-[#C3A36D] hover:bg-[#C3A36D]/90" : "border-[#C3A36D]/30"}
                     >
                       展示中
@@ -814,7 +1679,10 @@ export function ArtistDashboard() {
                     <Button
                       variant={artworkFilter === "sold" ? "default" : "outline"}
                       size="sm"
-                      onClick={() => setArtworkFilter("sold")}
+                      onClick={() => {
+                        setArtworkFilter("sold");
+                        setArtworkPage(1);
+                      }}
                       className={artworkFilter === "sold" ? "bg-blue-500 hover:bg-blue-600" : "border-blue-200"}
                     >
                       売却済み
@@ -822,19 +1690,465 @@ export function ArtistDashboard() {
                     <Button
                       variant={artworkFilter === "returned" ? "default" : "outline"}
                       size="sm"
-                      onClick={() => setArtworkFilter("returned")}
+                      onClick={() => {
+                        setArtworkFilter("returned");
+                        setArtworkPage(1);
+                      }}
                       className={artworkFilter === "returned" ? "bg-gray-500 hover:bg-gray-600" : ""}
                     >
                       回収済み
                     </Button>
                   </div>
-                  <Button
-                    className="bg-gradient-to-r from-[#C3A36D] to-[#D4B478] hover:opacity-90"
-                    onClick={() => navigate("/signup/artist/artworks")}
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span>新しい作品を登録</span>
-                  </Button>
+                  
+                  {/* Collapsible Filter Panel */}
+                  <AnimatePresence>
+                    {isFilterOpen && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.3 }}
+                        className="pt-4 space-y-6 border-t overflow-hidden"
+                      >
+                      {/* Date Range */}
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2">
+                          <Calendar className="w-4 h-4 text-[#C3A36D]" />
+                          <Label className="text-sm font-semibold">日付範囲</Label>
+                        </div>
+                        <div className="grid sm:grid-cols-4 gap-3">
+                          <Select value={filters.dateType} onValueChange={(value: any) => setFilters(prev => ({ ...prev, dateType: value }))}>
+                            <SelectTrigger className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="created_at">作成日</SelectItem>
+                              <SelectItem value="published_at">公開日</SelectItem>
+                              <SelectItem value="updated_at">更新日</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Input
+                            type="date"
+                            value={filters.dateFrom}
+                            onChange={(e) => setFilters(prev => ({ ...prev, dateFrom: e.target.value }))}
+                            className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
+                            placeholder="開始日"
+                          />
+                          <Input
+                            type="date"
+                            value={filters.dateTo}
+                            onChange={(e) => setFilters(prev => ({ ...prev, dateTo: e.target.value }))}
+                            className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
+                            placeholder="終了日"
+                          />
+                          <Select onValueChange={applyDatePreset}>
+                            <SelectTrigger className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary">
+                              <SelectValue placeholder="クイック選択" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="today">今日</SelectItem>
+                              <SelectItem value="week">今週</SelectItem>
+                              <SelectItem value="month">今月</SelectItem>
+                              <SelectItem value="3months">過去3ヶ月</SelectItem>
+                              <SelectItem value="6months">過去6ヶ月</SelectItem>
+                              <SelectItem value="year">過去1年</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      
+                      <Separator />
+                      
+                      {/* Price Range */}
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2">
+                          <DollarSign className="w-4 h-4 text-[#C3A36D]" />
+                          <Label className="text-sm font-semibold">価格範囲</Label>
+                        </div>
+                        <div className="grid sm:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label className="text-xs text-gray-600">販売価格（円）</Label>
+                            <div className="grid grid-cols-2 gap-2">
+                              <Input
+                                type="number"
+                                placeholder="最小"
+                                value={filters.minPrice}
+                                onChange={(e) => setFilters(prev => ({ ...prev, minPrice: e.target.value }))}
+                                className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
+                              />
+                              <Input
+                                type="number"
+                                placeholder="最大"
+                                value={filters.maxPrice}
+                                onChange={(e) => setFilters(prev => ({ ...prev, maxPrice: e.target.value }))}
+                                className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-xs text-gray-600">レンタル価格（円）</Label>
+                            <div className="grid grid-cols-2 gap-2">
+                              <Input
+                                type="number"
+                                placeholder="最小"
+                                value={filters.minLeasePrice}
+                                onChange={(e) => setFilters(prev => ({ ...prev, minLeasePrice: e.target.value }))}
+                                className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
+                              />
+                              <Input
+                                type="number"
+                                placeholder="最大"
+                                value={filters.maxLeasePrice}
+                                onChange={(e) => setFilters(prev => ({ ...prev, maxLeasePrice: e.target.value }))}
+                                className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <Separator />
+                      
+                      {/* Size & Dimensions */}
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2">
+                          <Package className="w-4 h-4 text-[#C3A36D]" />
+                          <Label className="text-sm font-semibold">サイズ・寸法</Label>
+                        </div>
+                        <div className="space-y-4">
+                          <div>
+                            <Label className="text-xs text-gray-600 mb-2 block">サイズクラス</Label>
+                            <div className="flex flex-wrap gap-2">
+                              {sizeClassOptions.map((size) => (
+                                <div key={size} className="flex items-center space-x-2">
+                                  <Checkbox
+                                    id={`size-${size}`}
+                                    checked={filters.sizeClass.includes(size)}
+                                    onCheckedChange={() => toggleSizeClass(size)}
+                                  />
+                                  <Label htmlFor={`size-${size}`} className="text-sm cursor-pointer">
+                                    {size}
+                                  </Label>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="grid sm:grid-cols-3 gap-4">
+                            <div className="space-y-2">
+                              <Label className="text-xs text-gray-600">幅（cm）</Label>
+                              <div className="grid grid-cols-2 gap-2">
+                                <Input
+                                  type="number"
+                                  placeholder="最小"
+                                  value={filters.minWidth}
+                                  onChange={(e) => setFilters(prev => ({ ...prev, minWidth: e.target.value }))}
+                                  className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
+                                />
+                                <Input
+                                  type="number"
+                                  placeholder="最大"
+                                  value={filters.maxWidth}
+                                  onChange={(e) => setFilters(prev => ({ ...prev, maxWidth: e.target.value }))}
+                                  className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
+                                />
+                              </div>
+                            </div>
+                            <div className="space-y-2">
+                              <Label className="text-xs text-gray-600">高さ（cm）</Label>
+                              <div className="grid grid-cols-2 gap-2">
+                                <Input
+                                  type="number"
+                                  placeholder="最小"
+                                  value={filters.minHeight}
+                                  onChange={(e) => setFilters(prev => ({ ...prev, minHeight: e.target.value }))}
+                                  className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
+                                />
+                                <Input
+                                  type="number"
+                                  placeholder="最大"
+                                  value={filters.maxHeight}
+                                  onChange={(e) => setFilters(prev => ({ ...prev, maxHeight: e.target.value }))}
+                                  className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
+                                />
+                              </div>
+                            </div>
+                            <div className="space-y-2">
+                              <Label className="text-xs text-gray-600">奥行き（cm）</Label>
+                              <div className="grid grid-cols-2 gap-2">
+                                <Input
+                                  type="number"
+                                  placeholder="最小"
+                                  value={filters.minDepth}
+                                  onChange={(e) => setFilters(prev => ({ ...prev, minDepth: e.target.value }))}
+                                  className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
+                                />
+                                <Input
+                                  type="number"
+                                  placeholder="最大"
+                                  value={filters.maxDepth}
+                                  onChange={(e) => setFilters(prev => ({ ...prev, maxDepth: e.target.value }))}
+                                  className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-xs text-gray-600">重量（kg）</Label>
+                            <div className="grid grid-cols-2 gap-2">
+                              <Input
+                                type="number"
+                                placeholder="最小"
+                                value={filters.minWeight}
+                                onChange={(e) => setFilters(prev => ({ ...prev, minWeight: e.target.value }))}
+                                className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
+                              />
+                              <Input
+                                type="number"
+                                placeholder="最大"
+                                value={filters.maxWeight}
+                                onChange={(e) => setFilters(prev => ({ ...prev, maxWeight: e.target.value }))}
+                                className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <Separator />
+                      
+                      {/* Technique & Medium */}
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2">
+                          <Sparkles className="w-4 h-4 text-[#C3A36D]" />
+                          <Label className="text-sm font-semibold">技法・素材</Label>
+                        </div>
+                        <div className="grid sm:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label className="text-xs text-gray-600">技法</Label>
+                            <div className="flex flex-wrap gap-2">
+                              {mediumOptions.map((option) => (
+                                <div key={option.value} className="flex items-center space-x-2">
+                                  <Checkbox
+                                    id={`medium-${option.value}`}
+                                    checked={filters.medium.includes(option.value)}
+                                    onCheckedChange={() => toggleMedium(option.value)}
+                                  />
+                                  <Label htmlFor={`medium-${option.value}`} className="text-sm cursor-pointer">
+                                    {option.label}
+                                  </Label>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-xs text-gray-600">支持体</Label>
+                            <div className="flex flex-wrap gap-2">
+                              {supportOptions.map((option) => (
+                                <div key={option.value} className="flex items-center space-x-2">
+                                  <Checkbox
+                                    id={`support-${option.value}`}
+                                    checked={filters.support.includes(option.value)}
+                                    onCheckedChange={() => toggleSupport(option.value)}
+                                  />
+                                  <Label htmlFor={`support-${option.value}`} className="text-sm cursor-pointer">
+                                    {option.label}
+                                  </Label>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <Separator />
+                      
+                      {/* Year Range */}
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2">
+                          <Calendar className="w-4 h-4 text-[#C3A36D]" />
+                          <Label className="text-sm font-semibold">制作年</Label>
+                        </div>
+                        <div className="grid sm:grid-cols-4 gap-3">
+                          <Input
+                            type="number"
+                            placeholder="開始年"
+                            value={filters.yearFrom}
+                            onChange={(e) => setFilters(prev => ({ ...prev, yearFrom: e.target.value }))}
+                            className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
+                          />
+                          <Input
+                            type="number"
+                            placeholder="終了年"
+                            value={filters.yearTo}
+                            onChange={(e) => setFilters(prev => ({ ...prev, yearTo: e.target.value }))}
+                            className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
+                          />
+                          <Select onValueChange={applyYearPreset}>
+                            <SelectTrigger className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary">
+                              <SelectValue placeholder="クイック選択" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="thisYear">2024年</SelectItem>
+                              <SelectItem value="lastYear">2023年</SelectItem>
+                              <SelectItem value="5years">過去5年</SelectItem>
+                              <SelectItem value="10years">過去10年</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      
+                      <Separator />
+                      
+                      {/* Artwork Properties */}
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle className="w-4 h-4 text-[#C3A36D]" />
+                          <Label className="text-sm font-semibold">作品プロパティ</Label>
+                        </div>
+                      <div className="grid sm:grid-cols-2 gap-4">
+                        <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                          <Label htmlFor="hasFrame" className="text-sm cursor-pointer">
+                            額装あり
+                          </Label>
+                          <Switch
+                            id="hasFrame"
+                            checked={filters.hasFrame === true}
+                            onCheckedChange={(checked) =>
+                              setFilters((prev) => ({
+                                ...prev,
+                                hasFrame: checked ? true : undefined,
+                              }))
+                            }
+                          />
+                        </div>
+                        <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                          <Label htmlFor="isAIGenerated" className="text-sm cursor-pointer">
+                            AI生成作品
+                          </Label>
+                          <Switch
+                            id="isAIGenerated"
+                            checked={filters.isAIGenerated === true}
+                            onCheckedChange={(checked) =>
+                              setFilters((prev) => ({
+                                ...prev,
+                                isAIGenerated: checked ? true : undefined,
+                              }))
+                            }
+                          />
+                        </div>
+                      </div>
+                      </div>
+                      
+                      <Separator />
+                      
+                      {/* Style Tags */}
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2">
+                          <Sparkles className="w-4 h-4 text-[#C3A36D]" />
+                          <Label className="text-sm font-semibold">スタイルタグ</Label>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {styleTagOptions.map((tag) => (
+                            <div key={tag} className="flex items-center space-x-2">
+                              <Checkbox
+                                id={`tag-${tag}`}
+                                checked={filters.styleTags.includes(tag)}
+                                onCheckedChange={() => toggleStyleTag(tag)}
+                              />
+                              <Label htmlFor={`tag-${tag}`} className="text-sm cursor-pointer">
+                                {tag}
+                              </Label>
+                            </div>
+                          ))}
+                        </div>
+                        {filters.styleTags.length > 0 && (
+                          <div className="flex flex-wrap gap-2 mt-2">
+                            {filters.styleTags.map((tag) => (
+                              <Badge key={tag} variant="outline" className="border-[#C3A36D]/30 text-[#C3A36D]">
+                                {tag}
+                                <button
+                                  onClick={() => toggleStyleTag(tag)}
+                                  className="ml-2 hover:text-red-500"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      
+                      <Separator />
+                      
+                      {/* Engagement Metrics */}
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2">
+                          <Eye className="w-4 h-4 text-[#C3A36D]" />
+                          <Label className="text-sm font-semibold">エンゲージメント</Label>
+                        </div>
+                        <div className="grid sm:grid-cols-3 gap-4">
+                          <div className="space-y-2">
+                            <Label className="text-xs text-gray-600">閲覧数</Label>
+                            <div className="grid grid-cols-2 gap-2">
+                              <Input
+                                type="number"
+                                placeholder="最小"
+                                value={filters.minViewCount}
+                                onChange={(e) => setFilters(prev => ({ ...prev, minViewCount: e.target.value }))}
+                                className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
+                              />
+                              <Input
+                                type="number"
+                                placeholder="最大"
+                                value={filters.maxViewCount}
+                                onChange={(e) => setFilters(prev => ({ ...prev, maxViewCount: e.target.value }))}
+                                className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-xs text-gray-600">お気に入り数</Label>
+                            <div className="grid grid-cols-2 gap-2">
+                              <Input
+                                type="number"
+                                placeholder="最小"
+                                value={filters.minFavoriteCount}
+                                onChange={(e) => setFilters(prev => ({ ...prev, minFavoriteCount: e.target.value }))}
+                                className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
+                              />
+                              <Input
+                                type="number"
+                                placeholder="最大"
+                                value={filters.maxFavoriteCount}
+                                onChange={(e) => setFilters(prev => ({ ...prev, maxFavoriteCount: e.target.value }))}
+                                className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-xs text-gray-600">問い合わせ数</Label>
+                            <div className="grid grid-cols-2 gap-2">
+                              <Input
+                                type="number"
+                                placeholder="最小"
+                                value={filters.minInquiryCount}
+                                onChange={(e) => setFilters(prev => ({ ...prev, minInquiryCount: e.target.value }))}
+                                className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
+                              />
+                              <Input
+                                type="number"
+                                placeholder="最大"
+                                value={filters.maxInquiryCount}
+                                onChange={(e) => setFilters(prev => ({ ...prev, maxInquiryCount: e.target.value }))}
+                                className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               </CardContent>
             </Card>
@@ -848,8 +2162,9 @@ export function ArtistDashboard() {
                 </CardContent>
               </Card>
             ) : (
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredArtworks.map((artwork, index) => {
+            <>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredArtworks.map((artwork, index) => {
                 const config = statusConfig[artwork.status as keyof typeof statusConfig];
                 return (
                   <motion.div
@@ -863,8 +2178,12 @@ export function ArtistDashboard() {
                       className="bg-white border-2 border-gray-200 hover:shadow-xl transition-shadow overflow-hidden h-full flex flex-col relative cursor-pointer"
                       onClick={() => navigate(`/artwork-edit/${artwork.id}`)}
                     >
-                      {/* 作品画像 */}
-                      <div className="aspect-square bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center relative overflow-hidden">
+                      {/* 作品画像 - Carousel */}
+                      <div 
+                        className="aspect-square bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center relative overflow-hidden"
+                        onMouseEnter={() => handleCarouselHover(artwork.id, true)}
+                        onMouseLeave={() => handleCarouselHover(artwork.id, false)}
+                      >
                         {/* ステータスバッジを右上に統一 */}
                         <div className="absolute top-4 right-4 z-10 flex flex-col gap-2 items-end">
                           <Badge className={`${config.color} text-white border-0 shadow-md`}>
@@ -879,23 +2198,86 @@ export function ArtistDashboard() {
                           )}
                         </div>
 
-                        {artwork.main_image_url ? (
-                          <img
-                            src={artwork.main_image_url}
-                            alt={artwork.name}
-                            className="w-full h-full object-cover"
-                            onError={(e) => {
-                              // Fallback to icon if image fails to load
-                              const target = e.target as HTMLImageElement;
-                              target.style.display = "none";
-                              const parent = target.parentElement;
-                              if (parent) {
-                                const icon = document.createElement("div");
-                                icon.innerHTML = `<svg class="w-20 h-20 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>`;
-                                parent.appendChild(icon);
-                              }
-                            }}
-                          />
+                        {artwork.images && artwork.images.length > 0 ? (
+                          <>
+                            {/* Image Carousel */}
+                            <div className="relative w-full h-full">
+                              {artwork.images.map((imageUrl: string, imgIndex: number) => {
+                                const carouselState = artworkCarousels.get(artwork.id);
+                                const isActive = carouselState?.currentIndex === imgIndex;
+                                
+                                return (
+                                  <motion.div
+                                    key={imgIndex}
+                                    initial={false}
+                                    animate={{
+                                      opacity: isActive ? 1 : 0,
+                                      scale: isActive ? 1 : 0.95,
+                                    }}
+                                    transition={{
+                                      duration: 0.6,
+                                      ease: "easeInOut",
+                                    }}
+                                    className={`absolute inset-0 ${isActive ? "z-10" : "z-0"}`}
+                                  >
+                                    <ImageWithFallback
+                                      src={imageUrl}
+                                      alt={`${artwork.name} - 画像 ${imgIndex + 1}`}
+                                      className="w-full h-full object-cover"
+                                      fallback={
+                                        <div className="w-full h-full flex items-center justify-center">
+                                          <ImageIcon className="w-20 h-20 text-gray-300" strokeWidth={1.5} />
+                                        </div>
+                                      }
+                                    />
+                                  </motion.div>
+                                );
+                              })}
+                            </div>
+                            
+                            {/* Navigation arrows */}
+                            {artwork.images.length > 1 && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleCarouselPrev(artwork.id);
+                                  }}
+                                  className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-1.5 sm:p-2 transition-all z-20"
+                                  aria-label="前の画像"
+                                >
+                                  <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleCarouselNext(artwork.id);
+                                  }}
+                                  className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-1.5 sm:p-2 transition-all z-20"
+                                  aria-label="次の画像"
+                                >
+                                  <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />
+                                </button>
+                              </>
+                            )}
+                            
+                            {/* Image counter and auto-play indicator */}
+                            {artwork.images.length > 1 && (
+                              <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-2 z-20">
+                                <div className="bg-black/50 text-white px-2 sm:px-3 py-1 rounded-full text-xs">
+                                  {(artworkCarousels.get(artwork.id)?.currentIndex ?? 0) + 1} / {artwork.images.length}
+                                </div>
+                                {artworkCarousels.get(artwork.id)?.isAutoPlaying && !artworkCarousels.get(artwork.id)?.isHovering && (
+                                  <div className="bg-black/50 text-white px-2 py-1 rounded-full text-xs flex items-center gap-1">
+                                    <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-white rounded-full animate-pulse"></div>
+                                    <span className="hidden sm:inline">自動再生</span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </>
                         ) : artwork.isVideo ? (
                           <Video className="w-20 h-20 text-gray-300" strokeWidth={1.5} />
                         ) : (
@@ -966,7 +2348,78 @@ export function ArtistDashboard() {
                   </motion.div>
                 );
               })}
+            </div>
+            {/* Pagination controls */}
+            {artworkTotal > 0 && (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-6">
+                <div className="text-xs sm:text-sm text-gray-600">
+                  全 {artworkTotal} 件中{" "}
+                  {Math.min((artworkPage - 1) * artworkPageSize + 1, artworkTotal)}–
+                  {Math.min(artworkPage * artworkPageSize, artworkTotal)} 件を表示
+                </div>
+                <div className="flex items-center gap-4">
+                  {/* Page size selector */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs sm:text-sm text-gray-600">表示件数</span>
+                    <Select
+                      value={String(artworkPageSize)}
+                      onValueChange={(value) => {
+                        const size = parseInt(value, 10);
+                        setArtworkPageSize(size);
+                        setArtworkPage(1);
+                      }}
+                    >
+                      <SelectTrigger className="h-9 w-[90px] bg-gray-100 border-gray-200 focus:bg-white focus:border-primary">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="5">5件</SelectItem>
+                        <SelectItem value="10">10件</SelectItem>
+                        <SelectItem value="20">20件</SelectItem>
+                        <SelectItem value="50">50件</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {/* Page navigation */}
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-9 w-9"
+                      disabled={artworkPage <= 1}
+                      onClick={() => setArtworkPage((prev) => Math.max(1, prev - 1))}
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </Button>
+                    <span className="text-xs sm:text-sm text-gray-700 min-w-[80px] text-center">
+                      {artworkPage} /{" "}
+                      {Math.max(1, Math.ceil(artworkTotal / artworkPageSize))}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-9 w-9"
+                      disabled={
+                        artworkPage >= Math.max(
+                          1,
+                          Math.ceil(artworkTotal / artworkPageSize)
+                        )
+                      }
+                      onClick={() =>
+                        setArtworkPage((prev) =>
+                          prev + 1 > Math.ceil(artworkTotal / artworkPageSize)
+                            ? prev
+                            : prev + 1
+                        )
+                      }
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
               </div>
+            )}
+            </>
             )}
 
             {!isLoadingArtworks && filteredArtworks.length === 0 && (
@@ -1016,41 +2469,55 @@ export function ArtistDashboard() {
                   </div>
                 ) : (
                   <>
-                    {/* プロフィール写真 */}
-                    <div>
-                      <Label>プロフィール写真</Label>
-                      <div className="flex items-center gap-4 mt-2">
+                {/* プロフィール写真 */}
+                <div>
+                  <Label>プロフィール写真</Label>
+                  <div className="flex items-center gap-4 mt-2">
                         <div className="w-24 h-24 bg-gradient-to-br from-gray-100 to-gray-200 rounded-full flex items-center justify-center overflow-hidden">
-                          {profileImage ? (
+                      {profileImage ? (
                             <img src={profileImage} alt="プロフィール" className="w-24 h-24 rounded-full object-cover" />
-                          ) : (
-                            <User className="w-12 h-12 text-gray-400" />
-                          )}
-                        </div>
+                      ) : (
+                        <User className="w-12 h-12 text-gray-400" />
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => document.getElementById("profileImageInput")?.click()}
+                        disabled={isSavingProfile}
+                      >
+                        <ImageIcon className="w-4 h-4" />
+                        <span>写真を変更</span>
+                      </Button>
+                      {profileImage && (
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => document.getElementById("profileImageInput")?.click()}
+                          onClick={handleDeleteProfileImageClick}
                           disabled={isSavingProfile}
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
                         >
-                          <ImageIcon className="w-4 h-4" />
-                          <span>写真を変更</span>
+                          <X className="w-4 h-4" />
+                          <span>写真を削除</span>
                         </Button>
-                        <input
-                          type="file"
-                          id="profileImageInput"
-                          className="hidden"
-                          accept="image/*"
-                          onChange={handleProfileImageChange}
-                          disabled={isSavingProfile}
-                        />
-                      </div>
+                      )}
                     </div>
+                    <input
+                      type="file"
+                      id="profileImageInput"
+                      className="hidden"
+                      accept="image/*"
+                      onChange={handleProfileImageChange}
+                          disabled={isSavingProfile}
+                    />
+                  </div>
+                </div>
 
-                    <Separator />
+                <Separator />
 
-                    {/* 名前 */}
-                    <div className="space-y-2">
+                {/* 名前 */}
+                <div className="space-y-2">
                       <Label htmlFor="name" className="text-sm">名前（公開名）</Label>
                       <Input
                         id="name"
@@ -1058,10 +2525,10 @@ export function ArtistDashboard() {
                         onChange={(e) => setProfileFormData({ ...profileFormData, name: e.target.value })}
                         className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
                       />
-                    </div>
+                </div>
 
-                    {/* メールアドレス */}
-                    <div className="space-y-2">
+                {/* メールアドレス */}
+                <div className="space-y-2">
                       <Label htmlFor="email" className="text-sm">メールアドレス（非公開）</Label>
                       <Input
                         id="email"
@@ -1070,11 +2537,11 @@ export function ArtistDashboard() {
                         disabled
                         className="h-11 bg-gray-100 border-gray-200"
                       />
-                      <p className="text-xs text-gray-500">メールアドレスは公開されません</p>
-                    </div>
+                  <p className="text-xs text-gray-500">メールアドレスは公開されません</p>
+                </div>
 
-                    {/* 電話番号 */}
-                    <div className="space-y-2">
+                {/* 電話番号 */}
+                <div className="space-y-2">
                       <Label htmlFor="phone" className="text-sm">電話番号（非公開）</Label>
                       <Input
                         id="phone"
@@ -1083,45 +2550,45 @@ export function ArtistDashboard() {
                         onChange={(e) => setProfileFormData({ ...profileFormData, phone_number: e.target.value })}
                         className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
                       />
-                      <p className="text-xs text-gray-500">電話番号は公開されません</p>
-                    </div>
+                  <p className="text-xs text-gray-500">電話番号は公開されません</p>
+                </div>
 
-                    {/* 自己紹介 */}
-                    <div className="space-y-2">
+                {/* 自己紹介 */}
+                <div className="space-y-2">
                       <Label htmlFor="bio" className="text-sm">自己紹介文</Label>
-                      <Textarea
-                        id="bio"
-                        rows={4}
+                  <Textarea
+                    id="bio"
+                    rows={4}
                         value={profileFormData.biography}
                         onChange={(e) => setProfileFormData({ ...profileFormData, biography: e.target.value })}
-                        placeholder="あなたの作品について、制作のテーマやこだわりを教えてください"
+                    placeholder="あなたの作品について、制作のテーマやこだわりを教えてください"
                         className="bg-gray-100 border-gray-200 focus:bg-white focus:border-primary resize-none"
-                      />
-                    </div>
+                  />
+                </div>
 
-                    {/* 経歴 */}
-                    <div className="space-y-2">
+                {/* 経歴 */}
+                <div className="space-y-2">
                       <Label htmlFor="career" className="text-sm">経歴・展示歴</Label>
-                      <Textarea
-                        id="career"
-                        rows={4}
+                  <Textarea
+                    id="career"
+                    rows={4}
                         value={profileFormData.career}
                         onChange={(e) => setProfileFormData({ ...profileFormData, career: e.target.value })}
                         placeholder="学歴、受賞歴、個展・グループ展の経歴など（例：2020年 東京藝術大学卒業）"
                         className="bg-gray-100 border-gray-200 focus:bg-white focus:border-primary resize-none"
                       />
                       <p className="text-xs text-gray-500">1行に1つの経歴を記載してください（例：2020年 東京藝術大学卒業）</p>
-                    </div>
+                </div>
 
-                    <Separator />
+                <Separator />
 
-                    {/* SNSリンク */}
-                    <div className="space-y-4">
-                      <h3 className="text-lg text-[#3A3A3A]">SNS・Webサイト</h3>
+                {/* SNSリンク */}
+                <div className="space-y-4">
+                  <h3 className="text-lg text-[#3A3A3A]">SNS・Webサイト</h3>
 
-                      <div className="space-y-2">
+                  <div className="space-y-2">
                         <Label htmlFor="instagram" className="text-sm">Instagram</Label>
-                        <div className="flex gap-2">
+                    <div className="flex gap-2">
                           <Input
                             id="instagram"
                             value={profileFormData.instagram}
@@ -1140,15 +2607,15 @@ export function ArtistDashboard() {
                                 window.open(url, "_blank");
                               }}
                             >
-                              <ExternalLink className="w-4 h-4" />
-                            </Button>
+                        <ExternalLink className="w-4 h-4" />
+                      </Button>
                           )}
-                        </div>
-                      </div>
+                    </div>
+                  </div>
 
-                      <div className="space-y-2">
+                  <div className="space-y-2">
                         <Label htmlFor="website" className="text-sm">Webサイト</Label>
-                        <div className="flex gap-2">
+                    <div className="flex gap-2">
                           <Input
                             id="website"
                             value={profileFormData.website}
@@ -1167,48 +2634,48 @@ export function ArtistDashboard() {
                                 window.open(url, "_blank");
                               }}
                             >
-                              <ExternalLink className="w-4 h-4" />
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    <Separator />
-
-                    {/* 銀行口座情報 */}
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <h3 className="text-lg text-[#3A3A3A]">銀行口座情報</h3>
-                        <Badge variant="outline" className="text-xs">
-                          非公開
-                        </Badge>
-                      </div>
-                      <p className="text-sm text-gray-600">
-                        作品の売上金を受け取る口座情報です。この情報は公開されません。
-                      </p>
-                      <Button variant="outline" onClick={() => navigate("/bank-account-edit")}>
-                        <Edit className="w-4 h-4" />
-                        <span>口座情報を編集</span>
+                        <ExternalLink className="w-4 h-4" />
                       </Button>
+                          )}
                     </div>
+                  </div>
+                </div>
 
-                    {/* 保存ボタン */}
-                    <div className="flex gap-3 pt-4">
-                      <Button
+                <Separator />
+
+                {/* 銀行口座情報 */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg text-[#3A3A3A]">銀行口座情報</h3>
+                    <Badge variant="outline" className="text-xs">
+                      非公開
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-gray-600">
+                    作品の売上金を受け取る口座情報です。この情報は公開されません。
+                  </p>
+                  <Button variant="outline" onClick={() => navigate("/bank-account-edit")}>
+                    <Edit className="w-4 h-4" />
+                    <span>口座情報を編集</span>
+                  </Button>
+                </div>
+
+                {/* 保存ボタン */}
+                <div className="flex gap-3 pt-4">
+                  <Button
                         className="bg-gradient-to-r from-[#C3A36D] to-[#D4B478] hover:opacity-90 flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
                         onClick={handleSaveProfile}
                         disabled={isSavingProfile || !hasProfileChanges()}
-                      >
-                        {isSavingProfile ? (
-                          <div className="flex items-center">
-                            <Clock className="w-4 h-4 animate-spin" />
-                            <span>保存中...</span>
-                          </div>
-                        ) : (
-                          "変更を保存"
-                        )}
-                      </Button>
+                  >
+                    {isSavingProfile ? (
+                      <div className="flex items-center">
+                        <Clock className="w-4 h-4 animate-spin" />
+                        <span>保存中...</span>
+                      </div>
+                    ) : (
+                      "変更を保存"
+                    )}
+                  </Button>
                       <Button
                         variant="outline"
                         onClick={() => {
@@ -1219,7 +2686,7 @@ export function ArtistDashboard() {
                       >
                         キャンセル
                       </Button>
-                    </div>
+                </div>
                   </>
                 )}
               </CardContent>
@@ -1359,6 +2826,35 @@ export function ArtistDashboard() {
         onOpenChange={setReturnRequestDialogOpen}
         artwork={selectedArtworkForReturn}
       />
+
+      {/* Delete Profile Image Confirmation Dialog */}
+      <AlertDialog open={deleteImageDialogOpen} onOpenChange={setDeleteImageDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>プロフィール写真を削除しますか？</AlertDialogTitle>
+            <AlertDialogDescription>
+              この操作は取り消せません。プロフィール写真が削除され、デフォルトのアイコンが表示されます。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isSavingProfile}>キャンセル</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteProfileImage}
+              disabled={isSavingProfile}
+              className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+            >
+              {isSavingProfile ? (
+                <>
+                  <Clock className="w-4 h-4 mr-2 animate-spin" />
+                  削除中...
+                </>
+              ) : (
+                "削除する"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Footer />
     </div>

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
@@ -6,7 +6,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ImageWithFallback } from "@/components/common/ImageWithFallback";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -25,7 +24,6 @@ import {
   Legend
 } from "recharts";
 import {
-  Building2,
   Eye,
   Sparkles,
   ChevronRight,
@@ -46,17 +44,65 @@ import {
   Settings,
   ChevronLeft,
   Image,
-  Frame
+  Frame,
+  Loader2,
+  QrCode,
+  Download,
 } from "lucide-react";
 import { Link, useNavigate, useParams, useLocation } from "react-router-dom";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  getSpace,
+  updateSpace as updateSpaceApi,
+  deleteSpace as deleteSpaceApi,
+  type SpaceResponse,
+} from "@/services/space.service";
+import {
+  getSpaceQRCode,
+  generateSpaceQRCode,
+  downloadSpaceQRCodeImage,
+  type SpaceQRCodeResponse,
+} from "@/services/qr.service";
+
+const DEFAULT_SPACE_IMAGE =
+  "https://images.unsplash.com/photo-1497366754035-f200968a6e72?w=1200";
+
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isUuidString(id: string | undefined): boolean {
+  return Boolean(id && UUID_REGEX.test(id));
+}
+
+function mapSpaceResponseToDetailData(s: SpaceResponse) {
+  const imgs =
+    s.photo_urls && s.photo_urls.length > 0
+      ? s.photo_urls
+      : [DEFAULT_SPACE_IMAGE];
+  const primary = imgs[0];
+  const addr = s.address?.trim() || "";
+  return {
+    id: s.id,
+    name: s.name,
+    location: addr || "—",
+    address: addr,
+    facilityOverview: s.facility_type || "—",
+    registeredDate: s.created_at
+      ? new Date(s.created_at).toLocaleDateString("ja-JP")
+      : "",
+    lastUpdated: s.updated_at
+      ? new Date(s.updated_at).toLocaleDateString("ja-JP")
+      : new Date().toLocaleDateString("ja-JP"),
+    artworksCount: s.current_artwork_id ? 1 : 0,
+    wallSize: "未設定",
+    lighting: "未設定",
+    type: s.facility_type,
+    image: primary,
+    images: imgs,
+    totalRevenue: 0,
+    totalSales: 0,
+  };
+}
+
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Breadcrumb,
@@ -66,6 +112,12 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
+
+/** Auth / signup forms と同じテキスト入力の見た目 */
+const AUTH_INPUT_CLASS =
+  "h-11 sm:h-12 text-sm sm:text-base bg-gray-100 border-gray-200 focus:bg-white focus:border-primary";
+const AUTH_INPUT_READONLY_CLASS =
+  "h-11 sm:h-12 text-sm sm:text-base bg-gray-100 border-gray-200 text-gray-700 cursor-default select-none";
 
 // モックデータ
 const MOCK_SPACES_DATA: Record<string, any> = {
@@ -186,7 +238,13 @@ export function CorporateSpaceDetailPage() {
   const [spaceData, setSpaceData] = useState<any>(MOCK_SPACES_DATA["1"]);
   const [currentArtwork, setCurrentArtwork] = useState<any>(MOCK_CURRENT_ARTWORKS["1"]);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [editedSpace, setEditedSpace] = useState<any>(MOCK_SPACES_DATA["1"]);
+  const [editedSpace, setEditedSpace] = useState<{
+    name: string;
+    address: string;
+    facilityOverview: string;
+  }>({ name: "", address: "", facilityOverview: "" });
+  const [isSavingSpaceEdit, setIsSavingSpaceEdit] = useState(false);
+  const [isDeletingSpace, setIsDeletingSpace] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [artworkPlacementArea, setArtworkPlacementArea] = useState<{
@@ -197,87 +255,246 @@ export function CorporateSpaceDetailPage() {
   } | null>(null);
   const [areaSelectionDialogOpen, setAreaSelectionDialogOpen] = useState(false);
   const [isAreaJustSaved, setIsAreaJustSaved] = useState(false);
+  const [isLoadingSpaceDetail, setIsLoadingSpaceDetail] = useState(true);
+  const [spaceQrInfo, setSpaceQrInfo] = useState<SpaceQRCodeResponse | null>(
+    null,
+  );
+  const [qrMetaLoading, setQrMetaLoading] = useState(false);
+  const [qrGenerating, setQrGenerating] = useState(false);
+  const [qrDownloading, setQrDownloading] = useState(false);
+
+  const canManageSpaceQr =
+    Boolean(spaceId && isUuidString(spaceId)) &&
+    Boolean(
+      typeof window !== "undefined" && localStorage.getItem("mgj_access_token"),
+    );
 
   useEffect(() => {
-    let space = null;
-    let artwork = null;
-    
-    if (location.state?.space) {
-      const stateSpace = location.state.space;
-      space = {
-        id: stateSpace.id,
-        name: stateSpace.name,
-        location: stateSpace.location,
-        address: stateSpace.location,
-        registeredDate: stateSpace.registeredAt ? new Date(stateSpace.registeredAt).toLocaleDateString('ja-JP') : "",
-        lastUpdated: new Date().toLocaleDateString('ja-JP'),
-        artworksCount: stateSpace.currentArtwork ? 1 : 0,
-        wallSize: "未設定",
-        lighting: "未設定",
-        type: stateSpace.subType || stateSpace.facilityType || "未設定",
-        image: stateSpace.image || stateSpace.images?.[0] || "https://images.unsplash.com/photo-1497366754035-f200968a6e72?w=1200",
-        images: stateSpace.images || (stateSpace.image ? [stateSpace.image] : ["https://images.unsplash.com/photo-1497366754035-f200968a6e72?w=1200"]),
-        totalRevenue: typeof stateSpace.totalRevenue === 'string' 
-          ? parseInt(stateSpace.totalRevenue.replace(/[^0-9]/g, '')) 
-          : (stateSpace.totalRevenue || 0),
-        totalSales: stateSpace.totalSales || 0
-      };
-      
-      if (stateSpace.currentArtwork) {
-        artwork = {
-          id: stateSpace.currentArtwork.id,
-          title: stateSpace.currentArtwork.title,
-          artist: stateSpace.currentArtwork.artist,
-          image: stateSpace.currentArtwork.image,
-          price: stateSpace.currentArtwork.price,
-          startDate: stateSpace.currentArtwork.displayedSince,
-          days: Math.floor((new Date().getTime() - new Date(stateSpace.currentArtwork.displayedSince).getTime()) / (1000 * 60 * 60 * 24)),
-          views: stateSpace.currentArtwork.views || 0,
-          ctr: 0,
-          conversion: 0,
-          status: "展示中"
-        };
+    let cancelled = false;
+
+    const load = async () => {
+      if (!spaceId) {
+        setIsLoadingSpaceDetail(false);
+        return;
       }
-    }
-    
-    if (!space) {
-      space = MOCK_SPACES_DATA[spaceId || "1"];
-      artwork = MOCK_CURRENT_ARTWORKS[spaceId || "1"] || null;
-    }
-    
-    if (!space) {
-      const savedSpaces = JSON.parse(localStorage.getItem("mgj_registered_spaces") || "[]");
-      const foundSpace = savedSpaces.find((s: any) => s.id === spaceId);
-      
-      if (foundSpace) {
+
+      setIsLoadingSpaceDetail(true);
+
+      if (
+        isUuidString(spaceId) &&
+        localStorage.getItem("mgj_access_token")
+      ) {
+        try {
+          const s = await getSpace(spaceId);
+          if (cancelled) return;
+          setSpaceData(mapSpaceResponseToDetailData(s));
+          setCurrentArtwork(null);
+          setIsLoadingSpaceDetail(false);
+          return;
+        } catch (e) {
+          console.warn("getSpace failed, falling back to cache", e);
+        }
+      }
+
+      if (cancelled) return;
+
+      let space: any = null;
+      let artwork: any = null;
+
+      if (location.state?.space) {
+        const stateSpace = location.state.space;
+        const facilityOverview =
+          [stateSpace.facilityType, stateSpace.subType].filter(Boolean).join(" / ") ||
+          stateSpace.facility_type ||
+          stateSpace.type ||
+          "未設定";
+        const addr = stateSpace.address || stateSpace.location || "";
         space = {
-          id: foundSpace.id,
-          name: foundSpace.name || "未設定",
-          location: foundSpace.location || "未設定",
-          address: foundSpace.address || "",
-          registeredDate: foundSpace.registeredAt ? new Date(foundSpace.registeredAt).toLocaleDateString('ja-JP') : "",
-          lastUpdated: new Date().toLocaleDateString('ja-JP'),
-          artworksCount: 0,
-          wallSize: foundSpace.wallSize || "未設定",
-          lighting: foundSpace.lighting || "未設定",
-          type: foundSpace.subType || foundSpace.facilityType || "未設定",
-          image: foundSpace.image || foundSpace.images?.[0] || "https://images.unsplash.com/photo-1497366754035-f200968a6e72?w=1200",
-          images: foundSpace.images || (foundSpace.image ? [foundSpace.image] : ["https://images.unsplash.com/photo-1497366754035-f200968a6e72?w=1200"]),
-          totalRevenue: 0,
-          totalSales: 0
+          id: stateSpace.id,
+          name: stateSpace.name,
+          location: addr,
+          address: addr,
+          facilityOverview,
+          registeredDate: stateSpace.registeredAt
+            ? new Date(stateSpace.registeredAt).toLocaleDateString("ja-JP")
+            : "",
+          lastUpdated: new Date().toLocaleDateString("ja-JP"),
+          artworksCount: stateSpace.currentArtwork ? 1 : 0,
+          wallSize: "未設定",
+          lighting: "未設定",
+          type: stateSpace.subType || stateSpace.facilityType || "未設定",
+          image:
+            stateSpace.image ||
+            stateSpace.images?.[0] ||
+            DEFAULT_SPACE_IMAGE,
+          images:
+            stateSpace.images ||
+            (stateSpace.image ? [stateSpace.image] : [DEFAULT_SPACE_IMAGE]),
+          totalRevenue:
+            typeof stateSpace.totalRevenue === "string"
+              ? parseInt(stateSpace.totalRevenue.replace(/[^0-9]/g, ""), 10)
+              : stateSpace.totalRevenue || 0,
+          totalSales: stateSpace.totalSales || 0,
         };
+
+        if (stateSpace.currentArtwork) {
+          artwork = {
+            id: stateSpace.currentArtwork.id,
+            title: stateSpace.currentArtwork.title,
+            artist: stateSpace.currentArtwork.artist,
+            image: stateSpace.currentArtwork.image,
+            price: stateSpace.currentArtwork.price,
+            startDate: stateSpace.currentArtwork.displayedSince,
+            days: Math.floor(
+              (new Date().getTime() -
+                new Date(stateSpace.currentArtwork.displayedSince).getTime()) /
+                (1000 * 60 * 60 * 24)
+            ),
+            views: stateSpace.currentArtwork.views || 0,
+            ctr: 0,
+            conversion: 0,
+            status: "展示中",
+          };
+        }
       }
-    }
-    
-    if (!space) {
-      space = MOCK_SPACES_DATA["1"];
-      artwork = MOCK_CURRENT_ARTWORKS["1"] || null;
-    }
-    
-    setSpaceData(space);
-    setCurrentArtwork(artwork);
-    setEditedSpace(space);
+
+      if (!space) {
+        space = MOCK_SPACES_DATA[spaceId || "1"];
+        artwork = MOCK_CURRENT_ARTWORKS[spaceId || "1"] || null;
+        if (space && !space.facilityOverview) {
+          space = {
+            ...space,
+            facilityOverview: space.type ? `${space.type}` : "未設定",
+            address: space.address || space.location || "",
+          };
+        }
+      }
+
+      if (!space) {
+        const savedSpaces = JSON.parse(
+          localStorage.getItem("mgj_registered_spaces") || "[]"
+        );
+        const foundSpace = savedSpaces.find(
+          (s: any) => String(s.id) === String(spaceId)
+        );
+
+        if (foundSpace) {
+          const fo =
+            [foundSpace.facilityType, foundSpace.subType]
+              .filter(Boolean)
+              .join(" / ") ||
+            foundSpace.facility_type ||
+            "未設定";
+          const addr = foundSpace.address || foundSpace.location || "未設定";
+          space = {
+            id: foundSpace.id,
+            name: foundSpace.name || "未設定",
+            location: addr,
+            address: addr,
+            facilityOverview: fo,
+            registeredDate: foundSpace.registeredAt
+              ? new Date(foundSpace.registeredAt).toLocaleDateString("ja-JP")
+              : "",
+            lastUpdated: new Date().toLocaleDateString("ja-JP"),
+            artworksCount: 0,
+            wallSize: foundSpace.wallSize || "未設定",
+            lighting: foundSpace.lighting || "未設定",
+            type: foundSpace.subType || foundSpace.facilityType || "未設定",
+            image:
+              foundSpace.image || foundSpace.images?.[0] || DEFAULT_SPACE_IMAGE,
+            images:
+              foundSpace.images ||
+              (foundSpace.image ? [foundSpace.image] : [DEFAULT_SPACE_IMAGE]),
+            totalRevenue: 0,
+            totalSales: 0,
+          };
+        }
+      }
+
+      if (!space) {
+        space = {
+          ...MOCK_SPACES_DATA["1"],
+          facilityOverview: MOCK_SPACES_DATA["1"].type,
+          address:
+            MOCK_SPACES_DATA["1"].address || MOCK_SPACES_DATA["1"].location,
+        };
+        artwork = MOCK_CURRENT_ARTWORKS["1"] || null;
+      }
+
+      if (!cancelled) {
+        setSpaceData(space);
+        setCurrentArtwork(artwork);
+      }
+      if (!cancelled) setIsLoadingSpaceDetail(false);
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
   }, [spaceId, location.state, currentUser]);
+
+  useEffect(() => {
+    if (!canManageSpaceQr || isLoadingSpaceDetail || !spaceId) {
+      setSpaceQrInfo(null);
+      setQrMetaLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const run = async () => {
+      setQrMetaLoading(true);
+      try {
+        const qr = await getSpaceQRCode(spaceId);
+        if (!cancelled) setSpaceQrInfo(qr);
+      } catch {
+        if (!cancelled) setSpaceQrInfo(null);
+      } finally {
+        if (!cancelled) setQrMetaLoading(false);
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [spaceId, canManageSpaceQr, isLoadingSpaceDetail]);
+
+  const handleGenerateSpaceQr = useCallback(async () => {
+    if (!spaceId || !isUuidString(spaceId)) return;
+    setQrGenerating(true);
+    try {
+      const qr = await generateSpaceQRCode(spaceId);
+      setSpaceQrInfo(qr);
+      toast.success("QRコードを発行しました");
+    } catch (e) {
+      console.error(e);
+      toast.error(e instanceof Error ? e.message : "QRコードの発行に失敗しました");
+    } finally {
+      setQrGenerating(false);
+    }
+  }, [spaceId]);
+
+  const handleDownloadSpaceQr = useCallback(async () => {
+    if (!spaceId || !isUuidString(spaceId)) return;
+    setQrDownloading(true);
+    try {
+      const blob = await downloadSpaceQRCodeImage(spaceId);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `qr-space-${spaceId.slice(0, 8)}.png`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("QRコード画像をダウンロードしました");
+    } catch (e) {
+      console.error(e);
+      toast.error(e instanceof Error ? e.message : "ダウンロードに失敗しました");
+    } finally {
+      setQrDownloading(false);
+    }
+  }, [spaceId]);
 
   const scrollToHistory = () => {
     historyRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -317,65 +534,114 @@ export function CorporateSpaceDetailPage() {
   };
 
   const handleEditSpace = () => {
-    setEditedSpace(spaceData);
+    setEditedSpace({
+      name: spaceData.name || "",
+      address: spaceData.address || spaceData.location || "",
+      facilityOverview: spaceData.facilityOverview || spaceData.type || "—",
+    });
     setEditDialogOpen(true);
   };
 
-  const handleSaveEdit = () => {
-    console.log("Saving space data:", editedSpace);
-    setSpaceData(editedSpace);
-    toast.success("スペース情報を更新しました");
-    setEditDialogOpen(false);
+  const handleSaveEdit = async () => {
+    const name = editedSpace.name.trim();
+    const address = editedSpace.address.trim();
+    if (!name) {
+      toast.error("スペース名を入力してください");
+      return;
+    }
+    if (!address) {
+      toast.error("所在地を入力してください");
+      return;
+    }
+
+    const idStr = String(spaceData.id);
+    const looksLikeUuid = isUuidString(idStr);
+
+    setIsSavingSpaceEdit(true);
+    try {
+      let next = {
+        ...spaceData,
+        name,
+        address,
+        location: address,
+      };
+
+      if (looksLikeUuid) {
+        const updated = await updateSpaceApi(idStr, { name, address });
+        next = {
+          ...mapSpaceResponseToDetailData(updated),
+          totalRevenue: spaceData.totalRevenue,
+          totalSales: spaceData.totalSales,
+        };
+      }
+
+      setSpaceData(next);
+
+      const raw = JSON.parse(localStorage.getItem("mgj_registered_spaces") || "[]");
+      const idx = raw.findIndex((s: any) => String(s.id) === idStr);
+      if (idx >= 0) {
+        raw[idx] = { ...raw[idx], name, location: address };
+        localStorage.setItem("mgj_registered_spaces", JSON.stringify(raw));
+      }
+
+      toast.success("スペース情報を更新しました");
+      setEditDialogOpen(false);
+    } catch (e) {
+      console.error(e);
+      toast.error(e instanceof Error ? e.message : "更新に失敗しました");
+    } finally {
+      setIsSavingSpaceEdit(false);
+    }
   };
 
-  const handleDeleteSpace = () => {
-    console.log("Deleting space:", spaceId);
-    toast.success("スペースを削除しました");
-    setDeleteDialogOpen(false);
-    navigate("/corporate-dashboard");
+  const handleDeleteSpace = async () => {
+    const idStr = String(spaceId ?? spaceData?.id ?? "");
+    if (!idStr) {
+      toast.error("スペースIDが取得できません");
+      return;
+    }
+
+    setIsDeletingSpace(true);
+    try {
+      if (isUuidString(idStr) && localStorage.getItem("mgj_access_token")) {
+        await deleteSpaceApi(idStr);
+      }
+
+      try {
+        const raw = JSON.parse(
+          localStorage.getItem("mgj_registered_spaces") || "[]"
+        );
+        const next = raw.filter((s: any) => String(s.id) !== idStr);
+        localStorage.setItem("mgj_registered_spaces", JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+
+      toast.success("スペースを削除しました");
+      setDeleteDialogOpen(false);
+      navigate("/corporate-dashboard");
+    } catch (e) {
+      console.error(e);
+      toast.error(e instanceof Error ? e.message : "削除に失敗しました");
+    } finally {
+      setIsDeletingSpace(false);
+    }
   };
 
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
 
-      {/* カスタムヘッダー */}
+      {isLoadingSpaceDetail && spaceId ? (
+        <div className="flex flex-col items-center justify-center min-h-[50vh] gap-3 pt-20">
+          <Loader2 className="w-10 h-10 animate-spin text-primary" aria-hidden />
+          <p className="text-sm text-muted-foreground">スペース情報を読み込んでいます…</p>
+        </div>
+      ) : (
+        <>
+      {/* パンくず（アカウントはグローバル Header を使用） */}
       <div className="bg-white border-b pt-16">
-        <div className="container mx-auto px-4 sm:px-6">
-          <div className="flex items-center justify-between py-2">
-            {/* ロゴ */}
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center">
-                <Building2 className="w-4 h-4 text-white" />
-              </div>
-              <div>
-                <h1 className="text-sm text-primary">スペース管理</h1>
-              </div>
-            </div>
-
-            {/* プロフィール */}
-            <DropdownMenu>
-              <DropdownMenuTrigger className="flex items-center gap-3 px-3 py-2 rounded-md hover:bg-gray-100 transition-colors">
-                <div className="text-right hidden sm:block">
-                  <p className="text-sm">株式会社サンプル</p>
-                  <p className="text-xs text-gray-500">オフィス・施設管理</p>
-                </div>
-                <Avatar>
-                  <AvatarFallback className="bg-primary text-white">株</AvatarFallback>
-                </Avatar>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel>アカウント</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => navigate("/corporate-dashboard")}>
-                  ダッシュボードに戻る
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-
-          {/* パンくずリスト */}
-          <div className="pb-2">
+        <div className="container mx-auto px-4 sm:px-6 py-3">
             <Breadcrumb>
               <BreadcrumbList>
                 <BreadcrumbItem>
@@ -395,7 +661,6 @@ export function CorporateSpaceDetailPage() {
                 </BreadcrumbItem>
               </BreadcrumbList>
             </Breadcrumb>
-          </div>
         </div>
       </div>
 
@@ -418,7 +683,9 @@ export function CorporateSpaceDetailPage() {
                         <Home className="w-5 h-5 sm:w-6 sm:h-6 text-primary" />
                         {spaceData.name}
                       </CardTitle>
-                      <CardDescription className="text-xs sm:text-sm">{spaceData.type} • {spaceData.location}</CardDescription>
+                      <CardDescription className="text-xs sm:text-sm">
+                        {spaceData.facilityOverview || spaceData.type} • {spaceData.location}
+                      </CardDescription>
                     </div>
                     <div className="flex gap-2">
                       <Button
@@ -607,6 +874,81 @@ export function CorporateSpaceDetailPage() {
                       <p className="text-xs text-gray-500 mb-1">累計売上</p>
                       <p className="text-sm sm:text-base text-green-700">¥{spaceData.totalRevenue.toLocaleString()}</p>
                     </div>
+                  </div>
+
+                  {/* スペース用QRコード（1スペース1コード・展示作品は差し替え可能） */}
+                  <div className="rounded-xl border border-border/70 bg-muted/25 p-4 sm:p-5 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <QrCode className="w-5 h-5 text-primary shrink-0" />
+                      <h3 className="font-semibold text-sm sm:text-base">
+                        スペース用QRコード
+                      </h3>
+                    </div>
+                    <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
+                      スペース登録後、ここからQRを発行できます。高解像度画像を印刷して設置すると、来場者は現在展示中の作品ページへ誘導されます（作品を入れ替えても同じQRのままです）。
+                    </p>
+                    {!canManageSpaceQr ? (
+                      <p className="text-xs text-muted-foreground">
+                        ログイン済みの登録スペースでのみQRコードを発行・表示できます。
+                      </p>
+                    ) : qrMetaLoading ? (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                        <Loader2 className="w-4 h-4 animate-spin" aria-hidden />
+                        QR情報を読み込んでいます…
+                      </div>
+                    ) : spaceQrInfo ? (
+                      <div className="flex flex-col sm:flex-row gap-4 items-start pt-1">
+                        <div className="bg-white p-3 rounded-lg border shadow-sm shrink-0 mx-auto sm:mx-0">
+                          <img
+                            src={spaceQrInfo.qr_code_url}
+                            alt="スペースQRコード"
+                            className="w-36 h-36 sm:w-40 sm:h-40 object-contain"
+                          />
+                        </div>
+                        <div className="space-y-3 flex-1 w-full min-w-0">
+                          <p className="text-xs sm:text-sm text-muted-foreground">
+                            累計スキャン回数:{" "}
+                            <span className="font-medium text-foreground tabular-nums">
+                              {spaceQrInfo.total_scans}
+                            </span>
+                          </p>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="gap-2 w-full sm:w-auto"
+                            disabled={qrDownloading}
+                            onClick={() => void handleDownloadSpaceQr()}
+                          >
+                            {qrDownloading ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Download className="w-4 h-4" />
+                            )}
+                            高解像度PNGをダウンロード
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <Button
+                        type="button"
+                        className="bg-gradient-to-r from-primary to-accent hover:opacity-90 gap-2"
+                        disabled={qrGenerating}
+                        onClick={() => void handleGenerateSpaceQr()}
+                      >
+                        {qrGenerating ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            発行中…
+                          </>
+                        ) : (
+                          <>
+                            <QrCode className="w-4 h-4" />
+                            QRコードを発行
+                          </>
+                        )}
+                      </Button>
+                    )}
                   </div>
 
                   {/* AIに作品を提案させるボタン（上部に配置） */}
@@ -1026,88 +1368,114 @@ export function CorporateSpaceDetailPage() {
       <Footer />
 
       {/* スペース編集ダイアログ */}
-      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <Dialog
+        open={editDialogOpen}
+        onOpenChange={(open) => {
+          if (!open && isSavingSpaceEdit) return;
+          setEditDialogOpen(open);
+        }}
+      >
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto sm:rounded-xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-lg sm:text-xl">
               <Settings className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
               スペース情報の編集
             </DialogTitle>
-            <DialogDescription className="text-xs sm:text-sm">
-              スペースの詳細情報を編集できます
+            <DialogDescription className="text-xs sm:text-sm text-left">
+              スペース名と所在地を変更できます。施設概要は登録時の内容のため変更できません。
             </DialogDescription>
           </DialogHeader>
-          
-          <div className="space-y-4 sm:space-y-6 py-4">
-            {/* スペース名 */}
-            <div className="space-y-2">
-              <Label htmlFor="space-name" className="text-xs sm:text-sm">スペース名 *</Label>
-              <Input
-                id="space-name"
-                value={editedSpace.name}
-                onChange={(e) => setEditedSpace({ ...editedSpace, name: e.target.value })}
-                placeholder="例：1階エントランス"
-                className="text-sm sm:text-base"
-              />
+
+          <form
+            id="corporate-space-edit-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleSaveEdit();
+            }}
+            className="flex flex-col gap-0"
+          >
+            <div className="space-y-5 sm:space-y-6 py-2">
+              <div className="space-y-2">
+                <Label htmlFor="space-name-edit" className="text-sm text-foreground">
+                  スペース名（自分用）
+                </Label>
+                <Input
+                  id="space-name-edit"
+                  value={editedSpace.name}
+                  onChange={(e) => setEditedSpace({ ...editedSpace, name: e.target.value })}
+                  placeholder="例：1階エントランス"
+                  className={AUTH_INPUT_CLASS}
+                  autoComplete="off"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="facility-overview-ro" className="text-sm text-foreground">
+                  施設概要
+                </Label>
+                <Input
+                  id="facility-overview-ro"
+                  readOnly
+                  tabIndex={-1}
+                  value={editedSpace.facilityOverview}
+                  className={AUTH_INPUT_READONLY_CLASS}
+                  aria-readonly="true"
+                />
+                <p className="text-xs text-muted-foreground">登録時に設定した内容です（変更不可）</p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="space-address-edit" className="text-sm text-foreground">
+                  所在地
+                </Label>
+                <Input
+                  id="space-address-edit"
+                  value={editedSpace.address}
+                  onChange={(e) => setEditedSpace({ ...editedSpace, address: e.target.value })}
+                  placeholder="例：東京都渋谷区〇〇 1-2-3 ○○ビル4F"
+                  className={AUTH_INPUT_CLASS}
+                  autoComplete="street-address"
+                />
+              </div>
             </div>
 
-            {/* スペースタイプ */}
-            <div className="space-y-2">
-              <Label htmlFor="space-type" className="text-xs sm:text-sm">スペースタイプ *</Label>
-              <Input
-                id="space-type"
-                value={editedSpace.type}
-                onChange={(e) => setEditedSpace({ ...editedSpace, type: e.target.value })}
-                placeholder="例：ロビー、会議室、オフィス"
-                className="text-sm sm:text-base"
-              />
-            </div>
-
-            {/* ロケーション */}
-            <div className="space-y-2">
-              <Label htmlFor="location" className="text-xs sm:text-sm">ロケーション *</Label>
-              <Input
-                id="location"
-                value={editedSpace.location}
-                onChange={(e) => setEditedSpace({ ...editedSpace, location: e.target.value })}
-                placeholder="例：東京本社 1F"
-                className="text-sm sm:text-base"
-              />
-            </div>
-
-            {/* 住所 */}
-            <div className="space-y-2">
-              <Label htmlFor="address" className="text-xs sm:text-sm">住所</Label>
-              <Input
-                id="address"
-                value={editedSpace.address}
-                onChange={(e) => setEditedSpace({ ...editedSpace, address: e.target.value })}
-                placeholder="例：東京都渋谷区〇〇 1-2-3"
-                className="text-sm sm:text-base"
-              />
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setEditDialogOpen(false)}
-              className="text-xs sm:text-sm"
-            >
-              キャンセル
-            </Button>
-            <Button
-              onClick={handleSaveEdit}
-              className="bg-gradient-to-r from-primary to-accent hover:opacity-90 text-xs sm:text-sm"
-            >
-              保存
-            </Button>
-          </DialogFooter>
+            <DialogFooter className="mt-4 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end sm:gap-3 pt-2 border-t border-border/60">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setEditDialogOpen(false)}
+                className="text-sm w-full sm:w-auto"
+                disabled={isSavingSpaceEdit}
+              >
+                キャンセル
+              </Button>
+              <Button
+                type="submit"
+                className="bg-gradient-to-r from-primary to-accent hover:opacity-90 text-sm min-w-[100px] w-full sm:w-auto"
+                disabled={isSavingSpaceEdit}
+              >
+                {isSavingSpaceEdit ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    保存中...
+                  </>
+                ) : (
+                  "保存"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 
       {/* スペース削除確認ダイアログ */}
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+      <AlertDialog
+        open={deleteDialogOpen}
+        onOpenChange={(open) => {
+          if (!open && isDeletingSpace) return;
+          setDeleteDialogOpen(open);
+        }}
+      >
         <AlertDialogContent className="max-w-md">
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2 text-red-600 text-base sm:text-lg">
@@ -1135,12 +1503,28 @@ export function CorporateSpaceDetailPage() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="text-xs sm:text-sm">キャンセル</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteSpace}
-              className="bg-red-600 hover:bg-red-700 text-white text-xs sm:text-sm"
+            <AlertDialogCancel
+              className="text-xs sm:text-sm"
+              disabled={isDeletingSpace}
             >
-              削除する
+              キャンセル
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700 text-white text-xs sm:text-sm"
+              disabled={isDeletingSpace}
+              onClick={(e) => {
+                e.preventDefault();
+                void handleDeleteSpace();
+              }}
+            >
+              {isDeletingSpace ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 inline animate-spin" />
+                  削除中...
+                </>
+              ) : (
+                "削除する"
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1155,6 +1539,8 @@ export function CorporateSpaceDetailPage() {
         currentArea={artworkPlacementArea || undefined}
         onSave={handleAreaSave}
       />
+        </>
+      )}
     </div>
   );
 }

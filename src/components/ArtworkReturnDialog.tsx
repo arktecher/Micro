@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -10,6 +10,12 @@ import { Separator } from "@/components/ui/separator";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
 import { ImageWithFallback } from "@/components/common/ImageWithFallback";
+import {
+  getReturnRequestContext,
+  createReturnRequest,
+  type ReturnRequestContext,
+  type ReturnRequestCreated,
+} from "@/services/space.service";
 import {
   Package,
   Calendar,
@@ -26,7 +32,7 @@ import {
 } from "lucide-react";
 
 interface Artwork {
-  id: number;
+  id: string | number;
   title: string;
   artist: string;
   image: string;
@@ -39,6 +45,10 @@ interface ArtworkReturnDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   artwork: Artwork | null;
+  /** When set, loads context and submits POST /spaces/{spaceId}/return-request */
+  spaceId?: string | null;
+  /** Called after a successful API return request */
+  onSuccess?: () => void;
 }
 
 // モックデータ - アーティスト情報
@@ -50,49 +60,163 @@ const MOCK_ARTIST = {
   email: "yamada@example.com"
 };
 
-export function ArtworkReturnDialog({ open, onOpenChange, artwork }: ArtworkReturnDialogProps) {
+function mapUiReasonToReasonCode(ui: string): string {
+  if (ui === "artist-request") return "other";
+  return ui;
+}
+
+function buildAdditionalNotes(uiReason: string, comments: string): string | null {
+  const parts: string[] = [];
+  if (uiReason === "artist-request") {
+    parts.push("アーティストに依頼されたため");
+  }
+  const c = comments.trim();
+  if (c) parts.push(c);
+  return parts.length ? parts.join("\n\n") : null;
+}
+
+export function ArtworkReturnDialog({
+  open,
+  onOpenChange,
+  artwork,
+  spaceId,
+  onSuccess,
+}: ArtworkReturnDialogProps) {
   const [step, setStep] = useState<"reason" | "label">("reason");
   const [returnReason, setReturnReason] = useState("");
   const [additionalComments, setAdditionalComments] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [ctx, setCtx] = useState<ReturnRequestContext | null>(null);
+  const [ctxLoading, setCtxLoading] = useState(false);
+  const [ctxError, setCtxError] = useState<string | null>(null);
+  const [createdReturn, setCreatedReturn] = useState<ReturnRequestCreated | null>(null);
 
-  // 展示日数と送料負担者を計算
+  useEffect(() => {
+    if (!open || !spaceId) {
+      setCtx(null);
+      setCtxError(null);
+      return;
+    }
+    let cancelled = false;
+    setCtxLoading(true);
+    setCtxError(null);
+    getReturnRequestContext(spaceId)
+      .then((c) => {
+        if (!cancelled) setCtx(c);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setCtxError(e instanceof Error ? e.message : "情報の取得に失敗しました");
+          setCtx(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setCtxLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, spaceId]);
+
+  useEffect(() => {
+    if (!open) {
+      setStep("reason");
+      setReturnReason("");
+      setAdditionalComments("");
+      setCreatedReturn(null);
+    }
+  }, [open]);
+
+  // 展示日数と送料負担者 — APIコンテキスト優先（180日ルールはサーバーと一致）
   const { displayDays, shippingCostBearer, rentalDurationMonths } = useMemo(() => {
-    if (!artwork) return { displayDays: 0, shippingCostBearer: "corporate", rentalDurationMonths: 0 };
-    
+    if (!artwork) {
+      return { displayDays: 0, shippingCostBearer: "corporate" as const, rentalDurationMonths: 0 };
+    }
+    if (ctx) {
+      const months = Math.floor(ctx.display_days / 30);
+      return {
+        displayDays: ctx.display_days,
+        rentalDurationMonths: months,
+        shippingCostBearer: ctx.shipping_cost_bearer,
+      };
+    }
     const startDate = new Date(artwork.displayedSince);
     const today = new Date();
     const diffTime = Math.abs(today.getTime() - startDate.getTime());
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     const months = Math.floor(diffDays / 30);
-    
     return {
       displayDays: diffDays,
       rentalDurationMonths: months,
-      shippingCostBearer: months >= 6 ? "artist" : "corporate"
+      shippingCostBearer: (months >= 6 ? "artist" : "corporate") as const,
     };
-  }, [artwork]);
+  }, [artwork, ctx]);
+
+  const displayDateLabel = useMemo(() => {
+    if (!artwork) return "—";
+    const raw = ctx?.display_start_date ?? artwork.displayedSince;
+    if (!raw) return "—";
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) return String(raw);
+    return d.toLocaleDateString("ja-JP", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+  }, [ctx?.display_start_date, artwork]);
 
   const handleSubmit = async () => {
     if (!returnReason) {
       toast.error("返却理由を選択してください");
       return;
     }
+    if (spaceId) {
+      if (ctxLoading) {
+        toast.error("情報を読み込み中です。しばらくお待ちください。");
+        return;
+      }
+      if (ctxError || !ctx) {
+        toast.error("返却申請の情報を取得できませんでした");
+        return;
+      }
+      if (!ctx.can_submit) {
+        toast.error(ctx.pending_message || "返却申請を送信できません");
+        return;
+      }
+    }
 
     setIsSubmitting(true);
-    
-    // TODO: API呼び出し
-    setTimeout(() => {
+
+    try {
+      if (spaceId && ctx) {
+        const reason_code = mapUiReasonToReasonCode(returnReason);
+        const additional_notes = buildAdditionalNotes(returnReason, additionalComments);
+        const res = await createReturnRequest(spaceId, {
+          reason_code,
+          additional_notes,
+        });
+        setCreatedReturn(res);
+        setStep("label");
+        toast.success("返却申請を受け付けました");
+        onSuccess?.();
+      } else {
+        await new Promise((r) => setTimeout(r, 600));
+        setStep("label");
+        toast.success("返却ラベルを発行しました（デモ）");
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "返却申請に失敗しました";
+      toast.error(msg);
+    } finally {
       setIsSubmitting(false);
-      setStep("label");
-      toast.success("返却ラベルを発行しました");
-    }, 1000);
+    }
   };
 
   const handleClose = () => {
     setStep("reason");
     setReturnReason("");
     setAdditionalComments("");
+    setCreatedReturn(null);
     onOpenChange(false);
   };
 
@@ -108,9 +232,35 @@ export function ArtworkReturnDialog({ open, onOpenChange, artwork }: ArtworkRetu
 
   if (!artwork) return null;
 
+  const canSubmitReason =
+    !spaceId || (!ctxLoading && !ctxError && ctx !== null && ctx.can_submit);
+
+  const isApiFlow = Boolean(spaceId && createdReturn);
+
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) handleClose();
+      }}
+    >
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        {spaceId && ctxLoading ? (
+          <div className="flex items-center justify-center gap-2 py-24 text-gray-600">
+            <span className="text-sm">返却申請の情報を読み込み中…</span>
+          </div>
+        ) : (
+          <>
+        {spaceId && ctxError && (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+            {ctxError}
+          </div>
+        )}
+        {spaceId && ctx && !ctx.can_submit && ctx.pending_message && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            {ctx.pending_message}
+          </div>
+        )}
         <AnimatePresence mode="wait">
           {step === "reason" ? (
             <motion.div
@@ -150,7 +300,7 @@ export function ArtworkReturnDialog({ open, onOpenChange, artwork }: ArtworkRetu
                         <div className="flex flex-wrap gap-3 text-sm text-gray-600">
                           <div className="flex items-center gap-1">
                             <Calendar className="w-4 h-4" />
-                            {artwork.displayedSince}
+                            {displayDateLabel}
                           </div>
                           <div className="flex items-center gap-1">
                             <MapPin className="w-4 h-4" />
@@ -221,6 +371,12 @@ export function ArtworkReturnDialog({ open, onOpenChange, artwork }: ArtworkRetu
                         </Label>
                       </div>
                       <div className="flex items-center space-x-3 p-3 rounded-lg border hover:bg-gray-50 transition-colors cursor-pointer">
+                        <RadioGroupItem value="space" id="space" />
+                        <Label htmlFor="space" className="flex-grow cursor-pointer">
+                          展示スペースを変更する予定
+                        </Label>
+                      </div>
+                      <div className="flex items-center space-x-3 p-3 rounded-lg border hover:bg-gray-50 transition-colors cursor-pointer">
                         <RadioGroupItem value="other" id="other" />
                         <Label htmlFor="other" className="flex-grow cursor-pointer">
                           その他
@@ -248,7 +404,7 @@ export function ArtworkReturnDialog({ open, onOpenChange, artwork }: ArtworkRetu
                 </Button>
                 <Button 
                   onClick={handleSubmit} 
-                  disabled={!returnReason || isSubmitting}
+                  disabled={!returnReason || isSubmitting || !canSubmitReason}
                   className="bg-accent hover:bg-accent/90 min-w-[180px]"
                 >
                   {isSubmitting ? "処理中..." : "返却手続きを完了"}
@@ -269,7 +425,9 @@ export function ArtworkReturnDialog({ open, onOpenChange, artwork }: ArtworkRetu
                   返却手続きが完了しました
                 </DialogTitle>
                 <DialogDescription>
-                  配送ラベルを発行し、集荷を自動で手配しました
+                  {isApiFlow
+                    ? "返却申請を受け付けました。MGJとアーティストへ通知されます。"
+                    : "配送ラベルを発行し、集荷を自動で手配しました（デモ）"}
                 </DialogDescription>
               </DialogHeader>
 
@@ -280,12 +438,25 @@ export function ArtworkReturnDialog({ open, onOpenChange, artwork }: ArtworkRetu
                     <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
                     <div className="flex-grow">
                       <p className="text-sm">
-                        <strong className="text-green-700">申請ID: RTN-{Date.now().toString().slice(-8)}</strong>
+                        <strong className="text-green-700">
+                          申請ID:{" "}
+                          {createdReturn?.id ?? `RTN-${Date.now().toString().slice(-8)}`}
+                        </strong>
                         <br />
                         <span className="text-gray-600">
-                          {new Date().toLocaleDateString('ja-JP')} 発行
+                          {createdReturn?.requested_date
+                            ? new Date(createdReturn.requested_date).toLocaleString("ja-JP")
+                            : `${new Date().toLocaleDateString("ja-JP")} 発行`}
                         </span>
                       </p>
+                      {createdReturn && (
+                        <p className="text-xs text-gray-600 mt-1">
+                          ステータス: {createdReturn.status} / 送料負担:{" "}
+                          {createdReturn.shipping_cost_bearer === "corporate"
+                            ? "法人"
+                            : "アーティスト"}
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -335,10 +506,19 @@ export function ArtworkReturnDialog({ open, onOpenChange, artwork }: ArtworkRetu
                           {shippingCostBearer === "corporate" ? "元払い（法人負担）" : "着払い（アーティスト負担）"}
                         </span>
                       </div>
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-gray-600">追跡番号</span>
-                        <span className="text-primary font-mono">MGJ-{Date.now().toString().slice(-10)}</span>
-                      </div>
+                      {!isApiFlow && (
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-gray-600">追跡番号</span>
+                          <span className="text-primary font-mono">
+                            MGJ-{Date.now().toString().slice(-10)}
+                          </span>
+                        </div>
+                      )}
+                      {isApiFlow && (
+                        <p className="text-xs text-gray-600">
+                          ラベル・追跡番号は審査後にダッシュボードでご確認いただけます。
+                        </p>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -352,31 +532,63 @@ export function ArtworkReturnDialog({ open, onOpenChange, artwork }: ArtworkRetu
                     </h3>
                     
                     <div className="space-y-3 text-sm">
-                      <div className="flex items-start gap-2">
-                        <User className="w-4 h-4 mt-0.5 text-gray-400" />
-                        <div>
-                          <p className="text-xs text-gray-500">お名前</p>
-                          <p className="text-primary">{MOCK_ARTIST.name}</p>
-                        </div>
-                      </div>
-                      
-                      <div className="flex items-start gap-2">
-                        <Home className="w-4 h-4 mt-0.5 text-gray-400" />
-                        <div>
-                          <p className="text-xs text-gray-500">郵便番号</p>
-                          <p className="text-primary">〒{MOCK_ARTIST.postalCode}</p>
-                          <p className="text-xs text-gray-500 mt-2">住所</p>
-                          <p className="text-primary">{MOCK_ARTIST.address}</p>
-                        </div>
-                      </div>
-                      
-                      <div className="flex items-start gap-2">
-                        <Phone className="w-4 h-4 mt-0.5 text-gray-400" />
-                        <div>
-                          <p className="text-xs text-gray-500">電話番号</p>
-                          <p className="text-primary">{MOCK_ARTIST.phone}</p>
-                        </div>
-                      </div>
+                      {ctx ? (
+                        <>
+                          <div className="flex items-start gap-2">
+                            <User className="w-4 h-4 mt-0.5 text-gray-400" />
+                            <div>
+                              <p className="text-xs text-gray-500">アーティスト</p>
+                              <p className="text-primary">{ctx.artist_name ?? artwork.artist}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-start gap-2">
+                            <Home className="w-4 h-4 mt-0.5 text-gray-400" />
+                            <div>
+                              <p className="text-xs text-gray-500">返送先</p>
+                              <p className="text-primary whitespace-pre-wrap">
+                                {ctx.artist_address_formatted ?? "—"}
+                              </p>
+                            </div>
+                          </div>
+                          {ctx.artist_phone && (
+                            <div className="flex items-start gap-2">
+                              <Phone className="w-4 h-4 mt-0.5 text-gray-400" />
+                              <div>
+                                <p className="text-xs text-gray-500">電話番号</p>
+                                <p className="text-primary">{ctx.artist_phone}</p>
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <div className="flex items-start gap-2">
+                            <User className="w-4 h-4 mt-0.5 text-gray-400" />
+                            <div>
+                              <p className="text-xs text-gray-500">お名前</p>
+                              <p className="text-primary">{MOCK_ARTIST.name}</p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-start gap-2">
+                            <Home className="w-4 h-4 mt-0.5 text-gray-400" />
+                            <div>
+                              <p className="text-xs text-gray-500">郵便番号</p>
+                              <p className="text-primary">〒{MOCK_ARTIST.postalCode}</p>
+                              <p className="text-xs text-gray-500 mt-2">住所</p>
+                              <p className="text-primary">{MOCK_ARTIST.address}</p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-start gap-2">
+                            <Phone className="w-4 h-4 mt-0.5 text-gray-400" />
+                            <div>
+                              <p className="text-xs text-gray-500">電話番号</p>
+                              <p className="text-primary">{MOCK_ARTIST.phone}</p>
+                            </div>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -439,6 +651,8 @@ export function ArtworkReturnDialog({ open, onOpenChange, artwork }: ArtworkRetu
             </motion.div>
           )}
         </AnimatePresence>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );

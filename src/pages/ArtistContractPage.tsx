@@ -1,6 +1,15 @@
 import { useState, useEffect } from "react";
 import { motion } from "motion/react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, type NavigateFunction } from "react-router-dom";
+
+function navigateAfterContractTerms(navigate: NavigateFunction) {
+  const firstId = peekFirstGoOnlineArtworkId();
+  if (firstId) {
+    navigate(artworkOnlineConfirmPath(firstId));
+  } else {
+    navigate("/dashboard");
+  }
+}
 import {
   Heart,
   Palette,
@@ -20,6 +29,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  peekFirstGoOnlineArtworkId,
+  artworkOnlineConfirmPath,
+} from "@/lib/artworkGoOnlineFlow";
 
 export function ArtistContractPage() {
   const navigate = useNavigate();
@@ -34,8 +47,7 @@ export function ArtistContractPage() {
   useEffect(() => {
     const hasAgreed = localStorage.getItem("mgj_artist_terms_agreed");
     if (hasAgreed === "true") {
-      // User has already agreed, skip this page and go directly to artwork selection
-      navigate("/artwork-selection");
+      navigateAfterContractTerms(navigate);
     }
   }, [navigate]);
 
@@ -44,7 +56,7 @@ export function ArtistContractPage() {
       // Save agreement status to localStorage
       localStorage.setItem("mgj_artist_terms_agreed", "true");
       console.log("Contract agreed");
-      navigate("/artwork-selection");
+      navigateAfterContractTerms(navigate);
     }
   };
 

@@ -1,4 +1,10 @@
-import { HashRouter as Router, Routes, Route } from "react-router-dom";
+import {
+  HashRouter as Router,
+  Routes,
+  Route,
+  Navigate,
+  useParams,
+} from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
 import { HomePage } from "./components/HomePage";
 import { ArtworksPage } from "./pages/ArtworksPage";
@@ -11,7 +17,7 @@ import { ArtistArtworksPage } from "./pages/ArtistArtworksPage";
 import { ArtistContractPage } from "./pages/ArtistContractPage";
 import { ArtworkEditPage } from "./pages/ArtworkEditPage";
 import { ArtworkRecallPage } from "./pages/ArtworkRecallPage";
-import { ArtworkSelectionPage } from "./pages/ArtworkSelectionPage";
+import { ArtworkGoOnlinePage } from "./pages/ArtworkGoOnlinePage";
 import { ArtworkPublishPage } from "./pages/ArtworkPublishPage";
 import { BankAccountEditPage } from "./pages/BankAccountEditPage";
 import { ContactPage } from "./pages/ContactPage";
@@ -22,6 +28,7 @@ import { CorporateSalesHistoryPage } from "./pages/CorporateSalesHistoryPage";
 import { CorporateArtworkDetailPage } from "./pages/CorporateArtworkDetailPage";
 import { CorporateSpaceDetailPage } from "./pages/CorporateSpaceDetailPage";
 import { CorporateProfilePage } from "./pages/CorporateProfilePage";
+import { CorporateInvitePage } from "./pages/CorporateInvitePage";
 import { ArtworkIssueReportPage } from "./pages/ArtworkIssueReportPage";
 import { ArtworkIssueReportConfirmationPage } from "./pages/ArtworkIssueReportConfirmationPage";
 import { ArtworkReturnRequestPage } from "./pages/ArtworkReturnRequestPage";
@@ -41,15 +48,34 @@ import { FavoritesPage } from "./pages/FavoritesPage";
 import { ArtworkConfirmationPage } from "./pages/ArtworkConfirmationPage";
 import { PurchasePage } from "./pages/PurchasePage";
 import { ArtworkViewPage } from "./pages/ArtworkViewPage";
+import { CorporateDisplayRequestPage } from "./pages/CorporateDisplayRequestPage";
 import { SignupConfirmPage } from "./pages/SignupConfirmPage";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { SupabaseAuthRedirectHandler } from "./components/common/SupabaseAuthRedirectHandler";
 import { Toaster } from "./components/ui/sonner";
+import {
+  QrNotFoundPage,
+  QrErrorPage,
+  SpaceEmptyPage,
+} from "./pages/QrFlowPages";
+
+/** Old signup URL → canonical online-confirm route */
+function LegacyArtworkGoOnlineRedirect() {
+  const { artworkId } = useParams<{ artworkId: string }>();
+  return (
+    <Navigate to={`/artist/works/${artworkId}/online-confirm`} replace />
+  );
+}
 
 export default function App() {
   return (
-    <Router>
+    <Router
+      future={{
+        v7_startTransition: true,
+        v7_relativeSplatPath: true,
+      }}
+    >
       <AuthProvider>
         <Toaster />
         <SupabaseAuthRedirectHandler />
@@ -65,7 +91,23 @@ export default function App() {
           <Route path="/dashboard" element={<ArtistDashboard />} />
           <Route path="/artwork-edit/:artworkId" element={<ArtworkEditPage />} />
           <Route path="/artwork-recall/:artworkId" element={<ArtworkRecallPage />} />
-          <Route path="/artwork-selection" element={<ArtworkSelectionPage />} />
+          <Route
+            path="/artwork-selection"
+            element={<Navigate to="/dashboard#artworks" replace />}
+          />
+          {/* 旧「作品一覧から選ぶ」→ 単一作品の公開確認（ArtworkGoOnlinePage と同一） */}
+          <Route
+            path="/artwork-selection/:artworkId"
+            element={<ArtworkGoOnlinePage />}
+          />
+          <Route
+            path="/artist/works/:artworkId/online-confirm"
+            element={<ArtworkGoOnlinePage />}
+          />
+          <Route
+            path="/signup/artist/artwork-go-online/:artworkId"
+            element={<LegacyArtworkGoOnlineRedirect />}
+          />
           <Route path="/artwork-publish" element={<ArtworkPublishPage />} />
           <Route path="/bank-account-edit" element={<BankAccountEditPage />} />
           <Route path="/contact" element={<ContactPage />} />
@@ -76,6 +118,7 @@ export default function App() {
           <Route path="/corporate-artwork/:id" element={<CorporateArtworkDetailPage />} />
           <Route path="/corporate-space/:spaceId" element={<CorporateSpaceDetailPage />} />
           <Route path="/corporate-profile" element={<CorporateProfilePage />} />
+          <Route path="/corporate-invite" element={<CorporateInvitePage />} />
           <Route path="/artwork-issue-report/:spaceId" element={<ArtworkIssueReportPage />} />
           <Route path="/artwork-issue-report-confirmation/:spaceId" element={<ArtworkIssueReportConfirmationPage />} />
           <Route path="/artwork-return-request/:spaceId" element={<ArtworkReturnRequestPage />} />
@@ -98,6 +141,14 @@ export default function App() {
           <Route path="/artwork-confirmation" element={<ArtworkConfirmationPage />} />
           <Route path="/purchase/:artworkId" element={<PurchasePage />} />
           <Route path="/artwork/:artworkId" element={<ArtworkViewPage />} />
+          <Route
+            path="/display/:artworkId"
+            element={<CorporateDisplayRequestPage />}
+          />
+          {/* Public QR scan redirects (backend GET /api/v1/qr/{id} → #/...) */}
+          <Route path="/qr-not-found" element={<QrNotFoundPage />} />
+          <Route path="/qr-error" element={<QrErrorPage />} />
+          <Route path="/space-empty" element={<SpaceEmptyPage />} />
           <Route path="*" element={<HomePage />} />
         </Routes>
       </AuthProvider>

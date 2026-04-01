@@ -1,5 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { toast } from "sonner";
+import { artworkService } from "@/services/artwork.service";
+import { useAuth } from "@/contexts/AuthContext";
 import { motion } from "motion/react";
 import {
   X,
@@ -9,7 +12,6 @@ import {
   Truck,
   Calendar,
   MapPin,
-  Building2,
   ArrowRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -44,36 +46,115 @@ const getMockArtwork = (id: string) => {
 export function ArtworkRecallPage() {
   const navigate = useNavigate();
   const { artworkId } = useParams();
+  const { isAuthenticated, userType, isInitialized } = useAuth();
   const mockArtwork = getMockArtwork(artworkId || "1");
   const [agreeToShipping, setAgreeToShipping] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
+  const [loadedTitle, setLoadedTitle] = useState<string | null>(null);
+  const [loadedImage, setLoadedImage] = useState<string | null>(null);
+  const [loadedPrice, setLoadedPrice] = useState<number | null>(null);
+  const [exhibitionDays, setExhibitionDays] = useState(0);
+  const [venueLabel, setVenueLabel] = useState<string | null>(null);
+  const [pageLoading, setPageLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
 
-  // 展示期間を計算
-  const calculateExhibitionDays = () => {
-    if (!mockArtwork.exhibition) return 0;
-    const startDate = new Date(mockArtwork.exhibition.startDate);
-    const today = new Date();
-    const diffTime = Math.abs(today.getTime() - startDate.getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays;
-  };
+  useEffect(() => {
+    if (!isInitialized || !artworkId) return;
+    if (!isAuthenticated || userType !== "artist") {
+      toast.error("アーティストのみ利用できます");
+      navigate("/login/artist");
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setPageLoading(true);
+      try {
+        const a = await artworkService.getArtwork(artworkId);
+        if (cancelled) return;
+        setLoadedTitle(a.title);
+        setLoadedImage(
+          a.main_image_url ||
+            a.images?.find((i) => i.is_main)?.image_url ||
+            a.images?.[0]?.image_url ||
+            "",
+        );
+        setLoadedPrice(Number(a.price) || 0);
+        try {
+          const ex = await artworkService.getExhibitionInfo(artworkId);
+          if (cancelled) return;
+          const onWall =
+            ex.is_exhibited && ex.assignment?.status === "displaying";
+          if (!onWall) {
+            toast.info(
+              "回収の申請は、法人が作品を受領して展示が開始されたあとに可能です。",
+            );
+            navigate(`/artwork-edit/${artworkId}`);
+            return;
+          }
+          setExhibitionDays(ex.assignment?.exhibition_days || 0);
+          const loc = ex.assignment?.space?.name || "";
+          const corp = ex.assignment?.corporate?.company_name || "";
+          setVenueLabel([loc, corp].filter(Boolean).join(" / ") || null);
+        } catch {
+          toast.info(
+            "展示情報を確認できませんでした。作品編集ページからご確認ください。",
+          );
+          navigate(`/artwork-edit/${artworkId}`);
+          return;
+        }
+      } catch (e) {
+        if (!cancelled) {
+          console.error(e);
+          toast.error("作品を読み込めませんでした");
+          navigate("/dashboard#artworks");
+        }
+      } finally {
+        if (!cancelled) setPageLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [artworkId, isAuthenticated, userType, isInitialized, navigate]);
 
-  const exhibitionDays = calculateExhibitionDays();
+  const displayTitle = loadedTitle ?? mockArtwork.title;
+  const displayImage = loadedImage ?? mockArtwork.image;
+  const displayPrice = loadedPrice ?? mockArtwork.price;
+
   const needsShippingFee = exhibitionDays < 180;
 
-  const handleRecall = () => {
+  const handleRecall = async () => {
+    if (!artworkId) return;
     if (needsShippingFee && !agreeToShipping) {
       return;
     }
-    // 回収処理
-    setTimeout(() => {
+    setSubmitting(true);
+    try {
+      await artworkService.requestRecall(artworkId);
+      toast.success("回収依頼を受け付けました");
       setIsCompleted(true);
-    }, 500);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "依頼に失敗しました");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleClose = () => {
     navigate("/dashboard");
   };
+
+  if (pageLoading && !isCompleted) {
+    return (
+      <div className="min-h-screen bg-[#F8F6F1]">
+        <Header />
+        <div className="flex items-center justify-center pt-28 pb-16">
+          <p className="text-sm text-gray-600">読み込み中…</p>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
 
   if (isCompleted) {
     return (
@@ -102,7 +183,7 @@ export function ArtworkRecallPage() {
                 </h2>
 
                 <p className="text-sm sm:text-base text-gray-600 mb-6 sm:mb-8 leading-relaxed">
-                  「{mockArtwork.title}」の回収申請を受け付けました。<br />
+                  「{displayTitle}」の回収申請を受け付けました。<br />
                   {needsShippingFee ? (
                     <>
                       回収手配が完了次第、郵送料の詳細をメールでお送りします。<br />
@@ -147,13 +228,26 @@ export function ArtworkRecallPage() {
                   </ul>
                 </div>
 
-                <Button
-                  size="lg"
-                  onClick={handleClose}
-                  className="bg-[#C3A36D] hover:bg-[#C3A36D]/90 w-full sm:w-auto text-sm sm:text-base"
-                >
-                  ダッシュボードへ戻る
-                </Button>
+                <div className="flex flex-col sm:flex-row gap-3 justify-center items-stretch sm:items-center">
+                  <Button
+                    size="lg"
+                    variant="default"
+                    onClick={() =>
+                      artworkId && navigate(`/artwork-edit/${artworkId}`)
+                    }
+                    className="bg-[#C3A36D] hover:bg-[#C3A36D]/90 w-full sm:w-auto text-sm sm:text-base"
+                  >
+                    作品ページで状況を確認
+                  </Button>
+                  <Button
+                    size="lg"
+                    variant="outline"
+                    onClick={handleClose}
+                    className="w-full sm:w-auto text-sm sm:text-base"
+                  >
+                    ダッシュボードへ戻る
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           </motion.div>
@@ -182,32 +276,28 @@ export function ArtworkRecallPage() {
                 <div className="flex flex-col sm:flex-row gap-4">
                   <div className="w-full sm:w-32 h-48 sm:h-32 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100">
                     <ImageWithFallback
-                      src={mockArtwork.image}
-                      alt={mockArtwork.title}
+                      src={displayImage}
+                      alt={displayTitle}
                       className="w-full h-full object-cover"
                     />
                   </div>
                   <div className="flex-grow">
-                    <h3 className="text-base sm:text-lg text-[#3A3A3A] mb-1">{mockArtwork.title}</h3>
+                    <h3 className="text-base sm:text-lg text-[#3A3A3A] mb-1">{displayTitle}</h3>
                     <p className="text-base sm:text-lg text-[#C3A36D] mb-2 sm:mb-3">
-                      ¥{mockArtwork.price.toLocaleString()}
+                      ¥{displayPrice.toLocaleString()}
                     </p>
                     <div className="space-y-1 text-xs sm:text-sm">
-                      {mockArtwork.exhibition && (
-                        <>
-                          <p className="text-gray-600 flex items-center gap-1">
-                            <MapPin className="w-3 h-3 flex-shrink-0" />
-                            <span className="break-words">{mockArtwork.exhibition.location}</span>
-                          </p>
-                          <p className="text-gray-600 flex items-center gap-1">
-                            <Building2 className="w-3 h-3 flex-shrink-0" />
-                            <span className="break-words">{mockArtwork.exhibition.venueName}</span>
-                          </p>
+                      {venueLabel && (
+                        <p className="text-gray-600 flex items-center gap-1">
+                          <MapPin className="w-3 h-3 flex-shrink-0" />
+                          <span className="break-words">{venueLabel}</span>
+                        </p>
+                      )}
+                      {exhibitionDays > 0 && (
                           <p className="text-gray-600 flex items-center gap-1">
                             <Calendar className="w-3 h-3 flex-shrink-0" />
                             展示期間: {exhibitionDays}日
                           </p>
-                        </>
                       )}
                     </div>
                   </div>
@@ -393,12 +483,12 @@ export function ArtworkRecallPage() {
             </Button>
             <Button
               size="lg"
-              onClick={handleRecall}
-              disabled={needsShippingFee && !agreeToShipping}
+              onClick={() => void handleRecall()}
+              disabled={submitting || (needsShippingFee && !agreeToShipping)}
               className="flex-1 w-full sm:w-auto bg-[#C3A36D] hover:bg-[#C3A36D]/90 text-sm sm:text-base"
             >
               <Package className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
-              <span>作品の回収を申請する</span>
+              <span>{submitting ? "送信中…" : "作品の回収を申請する"}</span>
               <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
             </Button>
           </motion.div>

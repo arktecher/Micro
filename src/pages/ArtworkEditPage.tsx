@@ -13,6 +13,11 @@ import {
   ChevronRight,
   Upload,
   Sparkles,
+  AlertCircle,
+  Loader2,
+  CheckCircle2,
+  AlertTriangle,
+  Truck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,9 +32,64 @@ import { Switch } from "@/components/ui/switch";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { toast } from "sonner";
-import { artworkService, type Artwork, type ArtworkImage } from "@/services/artwork.service";
+import {
+  artworkService,
+  type Artwork,
+  type ArtworkImage,
+  type ArtistIssueReportItem,
+  isArtworkInTransitFamily,
+  isArtworkReturnedAtArtistFamily,
+} from "@/services/artwork.service";
 import { useAuth } from "@/contexts/AuthContext";
 import { StyleTagsSection } from "@/components/common/StyleTagsSection";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+
+function issueTypeLabel(t: string): string {
+  const m: Record<string, string> = {
+    damage: "破損",
+    stain: "汚れ",
+    frame: "額・フレーム",
+    delivery: "配送",
+    other: "その他",
+    missing: "紛失",
+    quality: "品質",
+  };
+  return m[t] ?? t;
+}
+
+function issueStatusLabel(s: string): string {
+  const m: Record<string, string> = {
+    open: "未対応",
+    investigating: "調査中",
+    resolved: "解決済み",
+    rejected: "却下",
+  };
+  return m[s] ?? s;
+}
+
+function formatIssueDate(iso: string | null): string {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleString("ja-JP");
+  } catch {
+    return iso;
+  }
+}
 
 type FormData = {
   title: string;
@@ -64,11 +124,23 @@ export function ArtworkEditPage() {
   const [imagesToDelete, setImagesToDelete] = useState<string[]>([]);
   const [exhibitionInfo, setExhibitionInfo] = useState<any>(null);
   const [isLoadingExhibition, setIsLoadingExhibition] = useState(false);
+  const [exhibitionRequestContext, setExhibitionRequestContext] = useState<
+    Awaited<ReturnType<typeof artworkService.getExhibitionRequestContext>> | null
+  >(null);
+  const [isLoadingExhibitionRequest, setIsLoadingExhibitionRequest] =
+    useState(false);
+  const [markExhibitionShippedSubmitting, setMarkExhibitionShippedSubmitting] =
+    useState(false);
   const [styleTags, setStyleTags] = useState<string[]>([]);
   const [isAIGenerated, setIsAIGenerated] = useState(false);
   const [isAutoPlaying, setIsAutoPlaying] = useState(true);
   const [isHovering, setIsHovering] = useState(false);
-  
+  const [confirmArrivalOpen, setConfirmArrivalOpen] = useState(false);
+  const [confirmArrivalSubmitting, setConfirmArrivalSubmitting] = useState(false);
+  const [issueReports, setIssueReports] = useState<ArtistIssueReportItem[]>([]);
+  const [issueReportsLoading, setIssueReportsLoading] = useState(false);
+  const [issueModalOpen, setIssueModalOpen] = useState(false);
+
   // Store original data to detect changes
   const [originalFormData, setOriginalFormData] = useState<FormData | null>(null);
   const [originalStyleTags, setOriginalStyleTags] = useState<string[]>([]);
@@ -109,10 +181,24 @@ export function ArtworkEditPage() {
     loadArtwork();
   }, [artworkId, isAuthenticated, userType, isInitialized]);
 
+  const loadIssueReports = async () => {
+    if (!artworkId) return;
+    setIssueReportsLoading(true);
+    try {
+      const res = await artworkService.listArtworkIssueReports(artworkId);
+      setIssueReports(res.items);
+    } catch {
+      setIssueReports([]);
+    } finally {
+      setIssueReportsLoading(false);
+    }
+  };
+
   const loadArtwork = async () => {
     if (!artworkId) return;
 
     setIsLoading(true);
+    setExhibitionRequestContext(null);
     try {
       const data = await artworkService.getArtwork(artworkId);
       setArtwork(data);
@@ -172,9 +258,21 @@ export function ArtworkEditPage() {
       // Store original images for change detection
       setOriginalImages([...loadedImages]);
 
-      // Load exhibition information if artwork is published
-      if (data.status === "published") {
+      void loadIssueReports();
+
+      // Load exhibition information when online or physically exhibited
+      if (
+        data.status === "published" ||
+        data.status === "exhibited" ||
+        isArtworkInTransitFamily(data.status)
+      ) {
         loadExhibitionInfo();
+      }
+      if (
+        data.status === "exhibition_requested" ||
+        isArtworkInTransitFamily(data.status)
+      ) {
+        await loadExhibitionRequestContext();
       }
     } catch (error: any) {
       console.error("Failed to load artwork:", error);
@@ -197,6 +295,31 @@ export function ArtworkEditPage() {
       setExhibitionInfo(null);
     } finally {
       setIsLoadingExhibition(false);
+    }
+  };
+
+  // Corporate が「回収向け発送済み」にしたあと、タブ復帰で着荷確認ボタンを出す
+  useEffect(() => {
+    if (!artworkId) return;
+    const onVis = () => {
+      if (document.visibilityState !== "visible") return;
+      void loadExhibitionInfo();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [artworkId]);
+
+  const loadExhibitionRequestContext = async () => {
+    if (!artworkId) return;
+    setIsLoadingExhibitionRequest(true);
+    try {
+      const ctx = await artworkService.getExhibitionRequestContext(artworkId);
+      setExhibitionRequestContext(ctx);
+    } catch (error: unknown) {
+      console.error("Failed to load exhibition request context:", error);
+      setExhibitionRequestContext(null);
+    } finally {
+      setIsLoadingExhibitionRequest(false);
     }
   };
 
@@ -457,9 +580,49 @@ export function ArtworkEditPage() {
     }
   };
 
-  // 作品を回収する
+  // 作品を回収する（展示中＝法人受領・展示開始後のみ）
   const handleRecall = () => {
+    if (!exhibitionInfo?.assignment || exhibitionInfo.assignment.status !== "displaying") {
+      return;
+    }
     navigate(`/artwork-recall/${artworkId}`);
+  };
+
+  const handleConfirmReturnArrival = async () => {
+    if (!artworkId) return;
+    setConfirmArrivalSubmitting(true);
+    try {
+      const recallFlow = Boolean(exhibitionInfo?.recall_awaiting_artist_confirm);
+      const res = recallFlow
+        ? await artworkService.confirmRecallArrival(artworkId)
+        : await artworkService.confirmReturnArrival(artworkId);
+      toast.success(res.message || "着荷を確認しました");
+      setConfirmArrivalOpen(false);
+      await loadArtwork();
+      await loadExhibitionInfo();
+    } catch (error: unknown) {
+      const msg =
+        error instanceof Error ? error.message : "着荷確認に失敗しました";
+      toast.error(msg);
+    } finally {
+      setConfirmArrivalSubmitting(false);
+    }
+  };
+
+  const handleMarkExhibitionShipped = async () => {
+    if (!artworkId) return;
+    setMarkExhibitionShippedSubmitting(true);
+    try {
+      const res = await artworkService.markExhibitionShipped(artworkId);
+      toast.success(res.message || "発送済みとして登録しました");
+      await loadArtwork();
+    } catch (error: unknown) {
+      const msg =
+        error instanceof Error ? error.message : "発送登録に失敗しました";
+      toast.error(msg);
+    } finally {
+      setMarkExhibitionShippedSubmitting(false);
+    }
   };
 
   const handleClose = () => {
@@ -520,11 +683,40 @@ export function ArtworkEditPage() {
     return null;
   }
 
+  const activeIssueReports = issueReports.filter(
+    (r) => r.status === "open" || r.status === "investigating"
+  );
+  const hasActiveIssueAlerts = activeIssueReports.length > 0;
+
   const status = artwork.status;
   const isExhibited = exhibitionInfo?.is_exhibited || false;
+  /** 法人が受領し壁の展示が始まった状態のみ（発送済み・法人確認待ちの in_transit ではない） */
+  const isAssignmentDisplaying =
+    exhibitionInfo?.assignment?.status === "displaying";
+  const isInTransit = isArtworkInTransitFamily(status);
+  const isExhibitionOutbound =
+    exhibitionRequestContext?.has_exhibition_request === true;
+  /** 回収フロー中は「法人からの展示依頼」カードを出さない（API と二重にガード） */
+  const suppressExhibitionRequestCardForRecall =
+    Boolean(
+      exhibitionInfo?.recall_awaiting_artist_confirm ||
+        exhibitionInfo?.recall_awaiting_corporate_ship,
+    );
+  const showArtistExhibitionRequestCard =
+    (isLoadingExhibitionRequest ||
+      exhibitionRequestContext?.has_exhibition_request) &&
+    !suppressExhibitionRequestCardForRecall;
+  /** 展示先情報カード：回収着荷待ちなど is_exhibited だけでは隠れないようにする */
+  const showExhibitionDetailCard = Boolean(
+    exhibitionInfo?.assignment &&
+      (isExhibited ||
+        exhibitionInfo?.recall_awaiting_artist_confirm ||
+        exhibitionInfo?.recall_awaiting_corporate_ship),
+  );
+  const isExhibitionRequested = status === "exhibition_requested";
   const isDraft = status === "draft";
   const isPublished = status === "published" && !isExhibited;
-  const isReturned = status === "recalled";
+  const isReturned = isArtworkReturnedAtArtistFamily(status);
   const isSold = status === "sold";
 
   // Ensure currentImageIndex is within bounds
@@ -538,6 +730,66 @@ export function ArtworkEditPage() {
       {/* メインコンテンツ */}
       <div className="pt-20 sm:pt-24 pb-8 sm:pb-16 px-4 sm:px-6">
         <div className="container mx-auto max-w-6xl">
+          {hasActiveIssueAlerts && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 sm:px-5 sm:py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+            >
+              <div className="flex gap-3 min-w-0">
+                <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-red-900">
+                    法人からこの作品に関する不具合・破損の報告があります（{activeIssueReports.length}件）
+                  </p>
+                  <p className="text-xs text-red-800/90 mt-1">
+                    内容を確認し、必要に応じて運営までご連絡ください。
+                  </p>
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                className="border-red-300 bg-white text-red-900 hover:bg-red-100 shrink-0"
+                onClick={() => setIssueModalOpen(true)}
+              >
+                詳細を見る
+              </Button>
+            </motion.div>
+          )}
+
+          {/* 法人が回収向け発送済みのあと — ページ上部で着荷確認を明示 */}
+          {exhibitionInfo?.recall_awaiting_artist_confirm &&
+            isInTransit &&
+            exhibitionInfo?.assignment && (
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mb-6 rounded-xl border-2 border-sky-400/80 bg-gradient-to-r from-sky-50 to-blue-50/90 px-4 py-4 sm:px-6 sm:py-5 shadow-sm"
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-sky-950 flex items-center gap-2">
+                      <Truck className="w-5 h-5 shrink-0" />
+                      回収向けの作品が発送されました
+                    </p>
+                    <p className="text-xs sm:text-sm text-sky-900/90 mt-2 leading-relaxed">
+                      手元に届いたら、下のボタンで受領を確定してください。確定後、作品は「回収済み」となり、再びギャラリーに出す場合はオンライン公開から公開できます。
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="lg"
+                    className="w-full sm:w-auto shrink-0 bg-sky-800 hover:bg-sky-900 text-white px-6"
+                    onClick={() => setConfirmArrivalOpen(true)}
+                  >
+                    <CheckCircle2 className="w-5 h-5 mr-2" />
+                    作品の着荷を確認する
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
             {/* 左側：作品プレビュー */}
             <div className="lg:col-span-1">
@@ -628,7 +880,24 @@ export function ArtworkEditPage() {
                       )}
 
                       <div className="space-y-2">
-                        <h4 className="text-base sm:text-lg text-[#3A3A3A]">{formData.title || "作品タイトル"}</h4>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h4 className="text-base sm:text-lg text-[#3A3A3A]">{formData.title || "作品タイトル"}</h4>
+                          {isExhibitionRequested && (
+                            <Badge className="bg-orange-600/90 text-white text-[10px] sm:text-xs">
+                              展示依頼中
+                            </Badge>
+                          )}
+                          {isInTransit && isExhibitionOutbound && (
+                            <Badge className="bg-amber-700/90 text-white text-[10px] sm:text-xs">
+                              発送済み（法人受領待ち）
+                            </Badge>
+                          )}
+                          {isInTransit && !isExhibitionOutbound && (
+                            <Badge className="bg-amber-600/90 text-white text-[10px] sm:text-xs">
+                              返送中
+                            </Badge>
+                          )}
+                        </div>
                         <p className="text-lg sm:text-xl text-[#C3A36D]">¥{(formData.price || 0).toLocaleString()}</p>
                         <div className="text-xs sm:text-sm text-gray-600 space-y-1">
                           <p>
@@ -643,8 +912,142 @@ export function ArtworkEditPage() {
                   </Card>
                 </motion.div>
 
+                {/* 法人展示依頼 — 発送先・発送済み登録（回収・返送レッグでは非表示） */}
+                {showArtistExhibitionRequestCard && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.6, delay: 0.08 }}
+                  >
+                    <Card className="border-orange-300 bg-orange-50/80">
+                      <CardContent className="p-4 sm:p-6">
+                        <div className="flex items-center gap-2 mb-3 sm:mb-4 flex-wrap">
+                          <Package className="w-4 h-4 sm:w-5 sm:h-5 text-orange-700" />
+                          <h3 className="text-sm sm:text-base text-[#3A3A3A]">
+                            法人からの展示依頼
+                          </h3>
+                          {isLoadingExhibitionRequest ? (
+                            <Badge
+                              variant="outline"
+                              className="ml-auto text-xs border-orange-400"
+                            >
+                              読み込み中…
+                            </Badge>
+                          ) : exhibitionRequestContext?.assignment?.status ===
+                            "pending" ? (
+                            <Badge className="bg-orange-600 text-white ml-auto text-xs">
+                              発送前
+                            </Badge>
+                          ) : (
+                            <Badge className="bg-amber-700 text-white ml-auto text-xs">
+                              発送済み
+                            </Badge>
+                          )}
+                        </div>
+                        {isLoadingExhibitionRequest ? (
+                          <p className="text-xs text-gray-600">発送先情報を取得しています…</p>
+                        ) : exhibitionRequestContext?.has_exhibition_request ? (
+                          <>
+                            <p className="text-xs sm:text-sm text-gray-800 mb-4 leading-relaxed">
+                              法人がこの作品の展示を希望しています。以下の宛先へ配送し、手元から発送したら「発送済みにする」を押してください。
+                            </p>
+                            <div className="space-y-3 text-left">
+                              <div>
+                                <p className="text-xs text-gray-500 mb-1">スペース名</p>
+                                <p className="text-xs sm:text-sm text-gray-900">
+                                  {exhibitionRequestContext.space?.name || "—"}
+                                </p>
+                                {exhibitionRequestContext.corporate?.company_name && (
+                                  <p className="text-xs sm:text-sm text-gray-900 mt-0.5">
+                                    {exhibitionRequestContext.corporate.company_name}
+                                  </p>
+                                )}
+                              </div>
+                              <Separator />
+                              {(exhibitionRequestContext.space?.address ||
+                                exhibitionRequestContext.corporate?.address_formatted) && (
+                                <>
+                                  <div>
+                                    <p className="text-xs text-gray-500 mb-1">
+                                      配送先・住所
+                                    </p>
+                                    {exhibitionRequestContext.space?.address && (
+                                      <p className="text-xs sm:text-sm text-gray-900 whitespace-pre-wrap">
+                                        {exhibitionRequestContext.space.address}
+                                      </p>
+                                    )}
+                                    {exhibitionRequestContext.corporate?.address_formatted && (
+                                      <p className="text-xs sm:text-sm text-gray-900 mt-2 whitespace-pre-wrap">
+                                        {exhibitionRequestContext.corporate.address_formatted}
+                                      </p>
+                                    )}
+                                  </div>
+                                  <Separator />
+                                </>
+                              )}
+                              {(exhibitionRequestContext.corporate?.contact_name ||
+                                exhibitionRequestContext.corporate?.contact_email ||
+                                exhibitionRequestContext.corporate?.contact_phone) && (
+                                <>
+                                  <div>
+                                    <p className="text-xs text-gray-500 mb-1">連絡先</p>
+                                    {exhibitionRequestContext.corporate?.contact_name && (
+                                      <p className="text-xs sm:text-sm text-gray-900">
+                                        {exhibitionRequestContext.corporate.contact_name}
+                                      </p>
+                                    )}
+                                    {exhibitionRequestContext.corporate?.contact_email && (
+                                      <p className="text-xs text-gray-600 mt-1 break-all">
+                                        {exhibitionRequestContext.corporate.contact_email}
+                                      </p>
+                                    )}
+                                    {exhibitionRequestContext.corporate?.contact_phone && (
+                                      <p className="text-xs text-gray-600">
+                                        {exhibitionRequestContext.corporate.contact_phone}
+                                      </p>
+                                    )}
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                            {exhibitionRequestContext.can_mark_shipped ? (
+                              <div className="mt-4 space-y-2">
+                                <Button
+                                  type="button"
+                                  className="w-full bg-orange-600 hover:bg-orange-700 text-white"
+                                  disabled={markExhibitionShippedSubmitting}
+                                  onClick={handleMarkExhibitionShipped}
+                                >
+                                  {markExhibitionShippedSubmitting ? (
+                                    <>
+                                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                      処理中…
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Package className="w-4 h-4 mr-2" />
+                                      発送済みにする（配送API連携予定・現状はモック）
+                                    </>
+                                  )}
+                                </Button>
+                                <p className="text-[11px] text-orange-900/80 leading-relaxed">
+                                  実際に配送したあとに押してください。追跡番号の連携は今後のキャリアAPI実装時に追加します。
+                                </p>
+                              </div>
+                            ) : (
+                              <p className="text-xs text-amber-900/90 mt-4 p-3 rounded-md bg-amber-100/80 border border-amber-300/60">
+                                発送済みとして登録済みです。法人が受領・展示開始を確認するまでお待ちください。
+                              </p>
+                            )}
+                          </>
+                        ) : null}
+                      </CardContent>
+                    </Card>
+                  </motion.div>
+                )}
+
                 {/* 展示情報 */}
-                {isExhibited && exhibitionInfo?.assignment && (
+                {showExhibitionDetailCard && (
                   <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -655,8 +1058,67 @@ export function ArtworkEditPage() {
                         <div className="flex items-center gap-2 mb-3 sm:mb-4 flex-wrap">
                           <Building2 className="w-4 h-4 sm:w-5 sm:h-5 text-[#C3A36D]" />
                           <h3 className="text-sm sm:text-base text-[#3A3A3A]">展示先情報</h3>
-                          <Badge className="bg-[#C3A36D] text-white ml-auto text-xs">展示中</Badge>
+                          {isInTransit ? (
+                            <Badge className="bg-amber-600 text-white ml-auto text-xs">返送中</Badge>
+                          ) : (
+                            <Badge className="bg-[#C3A36D] text-white ml-auto text-xs">展示中</Badge>
+                          )}
                         </div>
+
+                        {exhibitionInfo.recall_awaiting_corporate_ship && (
+                          <div className="rounded-md border border-blue-400/80 bg-blue-50 p-3 mb-4 text-left">
+                            <p className="text-xs font-semibold text-blue-950 flex items-center gap-2 mb-1.5">
+                              <Package className="w-3.5 h-3.5 shrink-0" />
+                              回収依頼を送信済みです
+                            </p>
+                            <p className="text-[11px] text-blue-900/90 leading-relaxed">
+                              法人が作品を発送するまでお待ちください。発送後はこちらで着荷確認ができるようになります。
+                            </p>
+                          </div>
+                        )}
+
+                        {exhibitionInfo.return_request && (
+                          <div className="rounded-md border border-amber-400/80 bg-amber-50 p-3 mb-4 text-left">
+                            <p className="text-xs font-semibold text-amber-950 flex items-center gap-2 mb-1.5">
+                              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                              法人より返却の申請があります
+                            </p>
+                            <p className="text-[11px] text-amber-900/90 leading-relaxed">
+                              {exhibitionInfo.return_request.status === "pending" ||
+                              exhibitionInfo.return_request.status === "approved"
+                                ? "法人が作品をアーティスト宛に発送したあと、受領確認ができるようになります。発送は法人側の作業です（アーティストからの発送は不要です）。登録住所をご確認ください。"
+                                : "法人が返送を発送済みに登録しました。作品到着後、下のボタンで受領を確認してください。"}
+                            </p>
+                            {exhibitionInfo.return_request.requested_date && (
+                              <p className="text-[11px] text-amber-800 mt-2">
+                                申請日:{" "}
+                                {new Date(
+                                  `${exhibitionInfo.return_request.requested_date}T12:00:00`,
+                                ).toLocaleDateString("ja-JP")}
+                              </p>
+                            )}
+                            {exhibitionInfo.return_request.reason && (
+                              <p className="text-[11px] text-amber-900/85 mt-1">
+                                内容: {exhibitionInfo.return_request.reason}
+                              </p>
+                            )}
+                            <p className="text-[10px] text-amber-800/80 mt-2 font-mono break-all">
+                              申請ID: {exhibitionInfo.return_request.id}
+                            </p>
+                            {isInTransit &&
+                              exhibitionInfo.return_request.status === "in_transit" && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                className="mt-3 w-full sm:w-auto bg-amber-700 hover:bg-amber-800 text-white"
+                                onClick={() => setConfirmArrivalOpen(true)}
+                              >
+                                <CheckCircle2 className="w-4 h-4 mr-2" />
+                                作品の着荷を確認する
+                              </Button>
+                            )}
+                          </div>
+                        )}
 
                         <div className="space-y-3">
                           <div>
@@ -727,14 +1189,31 @@ export function ArtworkEditPage() {
                           </div>
                         </div>
 
-                        <Button
-                          variant="outline"
-                          className="w-full mt-4 border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700 text-sm sm:text-base"
-                          onClick={handleRecall}
-                        >
-                          <Package className="w-4 h-4 mr-2" />
-                          作品を回収する
-                        </Button>
+                        {!exhibitionInfo.return_request &&
+                          !exhibitionInfo.recall_awaiting_corporate_ship && (
+                          <div className="mt-4 space-y-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              disabled={!isAssignmentDisplaying}
+                              title={
+                                !isAssignmentDisplaying
+                                  ? "法人が作品を受領し、展示が開始されたあとに利用できます。"
+                                  : undefined
+                              }
+                              className="w-full border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700 text-sm sm:text-base disabled:opacity-50"
+                              onClick={handleRecall}
+                            >
+                              <Package className="w-4 h-4 mr-2" />
+                              作品を回収する
+                            </Button>
+                            {!isAssignmentDisplaying && (
+                              <p className="text-[11px] text-gray-500 leading-relaxed">
+                                発送済みで法人の受領・展示開始前は、回収の手続きに進めません。
+                              </p>
+                            )}
+                          </div>
+                        )}
                       </CardContent>
                     </Card>
                   </motion.div>
@@ -1592,6 +2071,115 @@ export function ArtworkEditPage() {
           </div>
         </div>
       </div>
+
+      <AlertDialog open={confirmArrivalOpen} onOpenChange={setConfirmArrivalOpen}>
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>作品の着荷を確認しますか？</AlertDialogTitle>
+            <AlertDialogDescription className="text-left space-y-2">
+              <span className="block">
+                {exhibitionInfo?.recall_awaiting_artist_confirm
+                  ? "実際に作品を受け取ったことを確認します。完了すると、アーティストからの回収依頼に伴う返送は完了となり、展示は終了扱いになります。"
+                  : "実際に作品を受け取ったことを確認します。完了すると、返却申請は完了となり、展示は終了扱いになります。"}
+              </span>
+              <span className="block text-sm text-muted-foreground">
+                ステータスは「回収済み」になります。ギャラリーに再掲載する場合は、あとから「オンライン公開する」から公開してください。
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2 sm:gap-0">
+            <AlertDialogCancel disabled={confirmArrivalSubmitting}>
+              キャンセル
+            </AlertDialogCancel>
+            <Button
+              type="button"
+              disabled={confirmArrivalSubmitting}
+              onClick={() => void handleConfirmReturnArrival()}
+              className="bg-amber-700 hover:bg-amber-800 text-white"
+            >
+              {confirmArrivalSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  処理中…
+                </>
+              ) : (
+                "着荷を確認する"
+              )}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog open={issueModalOpen} onOpenChange={setIssueModalOpen}>
+        <DialogContent className="w-[calc(100vw-1.5rem)] sm:max-w-4xl max-w-[min(56rem,calc(100vw-1.5rem))] max-h-[90vh] overflow-y-auto p-6 sm:p-8">
+          <DialogHeader>
+            <DialogTitle>不具合・破損の報告</DialogTitle>
+            <DialogDescription>
+              スペースから届いた報告の一覧です。対応状況は運営が管理します。
+            </DialogDescription>
+          </DialogHeader>
+          {issueReportsLoading ? (
+            <div className="flex items-center justify-center py-8 text-gray-500 text-sm">
+              <Loader2 className="w-5 h-5 animate-spin mr-2" />
+              読み込み中…
+            </div>
+          ) : issueReports.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4">報告はありません。</p>
+          ) : (
+            <ul className="space-y-6">
+              {issueReports.map((item) => (
+                <li
+                  key={item.id}
+                  className="rounded-lg border border-gray-200 bg-white p-5 sm:p-6 text-sm space-y-3"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline">{issueTypeLabel(item.issue_type)}</Badge>
+                    <Badge
+                      className={
+                        item.status === "resolved" || item.status === "rejected"
+                          ? "bg-gray-100 text-gray-800 border-gray-200"
+                          : "bg-amber-100 text-amber-900 border-amber-200"
+                      }
+                    >
+                      {issueStatusLabel(item.status)}
+                    </Badge>
+                  </div>
+                  {item.space_name && (
+                    <p className="text-xs text-gray-600">
+                      <span className="font-medium text-gray-700">スペース</span>{" "}
+                      {item.space_name}
+                    </p>
+                  )}
+                  <p className="text-[#3A3A3A] whitespace-pre-wrap">{item.description}</p>
+                  <div className="text-xs text-gray-500 space-y-0.5">
+                    <p>発見: {formatIssueDate(item.discovered_at)}</p>
+                    <p>報告日時: {formatIssueDate(item.created_at)}</p>
+                  </div>
+                  {item.photo_urls && item.photo_urls.length > 0 && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 pt-2">
+                      {item.photo_urls.map((url, i) => (
+                        <a
+                          key={`${item.id}-ph-${i}`}
+                          href={url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block rounded-lg overflow-hidden border border-gray-200 bg-gray-50 shadow-sm hover:opacity-95 transition-opacity"
+                        >
+                          <img
+                            src={url}
+                            alt={`報告写真 ${i + 1}`}
+                            className="w-full max-h-[min(22rem,50vh)] h-auto min-h-[10rem] object-contain"
+                          />
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Footer />
     </div>

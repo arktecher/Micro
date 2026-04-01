@@ -1,11 +1,11 @@
 import { toast } from "sonner";
-import { Heart, ShoppingCart, Share2, MessageCircle, ChevronLeft, ChevronRight, X, Expand, Info, Package, Truck, Shield, Calendar, ZoomIn, Eye } from "lucide-react";
+import { Heart, ShoppingCart, Share2, MessageCircle, ChevronLeft, ChevronRight, X, Expand, Info, Package, Truck, Shield, Calendar, ZoomIn, Eye, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
-import { useParams, useNavigate, useSearchParams, useLocation } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { SignupPromptDialog } from "@/components/common/SignupPromptDialog";
 import { motion, AnimatePresence } from "motion/react";
@@ -13,89 +13,122 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { getFavoritesKey } from "@/lib/storageKeys";
+import { toggleFavorite } from "@/services/corporateFavorites.service";
 import { ImageWithFallback } from "@/components/common/ImageWithFallback";
 import { SpaceSelectionModal } from "@/components/common/SpaceSelectionModal";
+import { artworkService, type Artwork } from "@/services/artwork.service";
 
-// Mock data for current artwork
-const mockArtwork = {
-  id: "WRK-001",
-  title: "静寂の朝",
-  artist: {
-    id: "ART-001",
-    name: "田中 美咲",
-    photo: "https://images.unsplash.com/photo-1625682103688-2ab73a4fb11a?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxhcnRpc3QlMjBwb3J0cmFpdCUyMHByb2Zlc3Npb25hbHxlbnwxfHx8fDE3NjM0OTc4NDV8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral",
-    bio: "東京藝術大学卒業。自然の中にある色彩や形からインスピレーションを得て、感情を色に変換する抽象画を制作しています。",
-    education: "東京藝術大学 美術学部 絵画科 卒業",
-    exhibitions: [
-      "2024年「Colors of Silence」個展 / 銀座ギャラリー",
-      "2023年「春の記憶」グループ展 / 六本木アートセンター",
-      "2022年「新進作家展」/ 国立新美術館"
-    ],
-    awards: [
-      "2023年 東京藝術大賞 優秀賞",
-      "2022年 若手作家奨励賞"
-    ],
-    website: "https://tanaka-misaki.art",
-    instagram: "@tanaka_misaki_art"
-  },
-  mainImage: "https://images.unsplash.com/photo-1748285279107-13e8799eab76?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxhYnN0cmFjdCUyMHBhaW50aW5nJTIwYXJ0d29ya3xlbnwxfHx8fDE3NjM1MTE1OTR8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral",
-  thumbnails: [
-    "https://images.unsplash.com/photo-1748285279107-13e8799eab76?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxhYnN0cmFjdCUyMHBhaW50aW5nJTIwYXJ0d29ya3xlbnwxfHx8fDE3NjM1MTE1OTR8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral",
-    "https://images.unsplash.com/photo-1562785072-c65ab858fcbc?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxjb250ZW1wb3JhcnklMjBhcnQlMjBjYW52YXN8ZW58MXx8fHwxNzYzNDg1MDc3fDA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral",
-    "https://images.unsplash.com/photo-1683659635051-39336c5476b8?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxqYXBhbmVzZSUyMG1pbmltYWxpc3QlMjBhcnR8ZW58MXx8fHwxNzYzNTExNTk2fDA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral",
-    "https://images.unsplash.com/photo-1716901548718-da465a9060fe?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxjb2xvcmZ1bCUyMGFic3RyYWN0JTIwcGFpbnRpbmd8ZW58MXx8fHwxNzYzNTAyMDY5fDA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral"
-  ],
-  price: 180000,
-  leasePrice: 12000,
-  dimensions: {
-    width: 80,
-    height: 60,
-    depth: 2
-  },
-  sizeClass: "L",
-  year: 2024,
-  medium: "アクリル",
-  support: "キャンバス",
-  weight: 3.2,
-  hasFrame: true,
-  coating: "UV保護ニス仕上げ",
-  status: "available",
-  exhibitedAt: null,
-  dominantColor: "#7BA8C0",
-  description: "海辺で過ごした夏の朝。穏やかな波の音と潮の香り、光が水面に反射する瞬間を抽象的に表現しました。ブルーとホワイトの対比が生み出す静寂と清涼感を感じていただけたら嬉しいです。",
-  story: "この作品は、幼少期に訪れた海辺の記憶から着想を得ています。朝日が昇る瞬間の静けさと、波が岸に打ち寄せるリズムを色彩と形で表現しました。制作には約3ヶ月を要し、何層にもアクリル絵具を重ねることで、光の透明感と深みを追求しました。",
-  packaging: "耐衝撃材使用・専用木製クレート梱包",
-  maintenance: "直射日光を避けて展示してください。表面の埃は柔らかい布で優しく拭き取ってください。"
-};
+function buildImageUrls(a: Artwork): string[] {
+  if (a.images && a.images.length > 0) {
+    return [...a.images]
+      .sort((x, y) => x.image_order - y.image_order)
+      .map((i) => i.image_url);
+  }
+  if (a.main_image_url) return [a.main_image_url];
+  return [];
+}
 
-// Mock related artworks
-const mockRelatedArtworks = [
-  { id: "WRK-002", title: "午後の光", artist: "田中 美咲", price: 150000, image: "https://images.unsplash.com/photo-1562785072-c65ab858fcbc?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxjb250ZW1wb3JhcnklMjBhcnQlMjBjYW52YXN8ZW58MXx8fHwxNzYzNDg1MDc3fDA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral" },
-  { id: "WRK-003", title: "風の記憶", artist: "田中 美咲", price: 120000, image: "https://images.unsplash.com/photo-1683659635051-39336c5476b8?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxqYXBhbmVzZSUyMG1pbmltYWxpc3QlMjBhcnR8ZW58MXx8fHwxNjM1MTE1OTZ8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral" },
-  { id: "WRK-004", title: "夕暮れの詩", artist: "田中 美咲", price: 200000, image: "https://images.unsplash.com/photo-1716901548718-da465a9060fe?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxjb2xvcmZ1bCUyMGFic3RyYWN0JTIwcGFpbnRpbmd8ZW58MXx8fHwxNzYzNTAyMDY5fDA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral" },
-  { id: "WRK-005", title: "春の訪れ", artist: "田中 美咲", price: 160000, image: "https://images.unsplash.com/photo-1748285279107-13e8799eab76?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxhYnN0cmFjdCUyMHBhaW50aW5nJTIwYXJ0d29ya3xlbnwxfHx8fDE3NjM1MTE1OTR8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral" },
-  { id: "WRK-006", title: "秋の調べ", artist: "田中 美咲", price: 175000, image: "https://images.unsplash.com/photo-1561214115-f2f134cc4912?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxhYnN0cmFjdCUyMGFydCUyMGNvbG9yZnVsfGVufDF8fHx8MTc2MzUxMTU5Nnww&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral" },
-  { id: "WRK-007", title: "冬の静寂", artist: "田中 美咲", price: 140000, image: "https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxtaW5pbWFsaXN0JTIwcGFpbnRpbmd8ZW58MXx8fHwxNzYzNTExNTk3fDA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral" }
-];
+interface RecommendationArtworkItem {
+  id: string;
+  title: string;
+  artist: string;
+  price: number;
+  image: string;
+}
 
-// Mock similar taste artworks
-const mockSimilarTasteArtworks = [
-  { id: "WRK-101", title: "Ocean Waves", artist: "佐藤 健太", price: 185000, image: "https://images.unsplash.com/photo-1541961017774-22349e4a1262?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxibHVlJTIwYWJzdHJhY3QlMjBhcnR8ZW58MXx8fHwxNzYzNTExNTk4fDA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral" },
-  { id: "WRK-102", title: "Ethereal Blue", artist: "山本 由美", price: 165000, image: "https://images.unsplash.com/photo-1549887534-1541e9326642?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxhcXVhJTIwYWJzdHJhY3QlMjBhcnR8ZW58MXx8fHwxNzYzNTExNTk5fDA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral" },
-  { id: "WRK-103", title: "Peaceful Waters", artist: "鈴木 一", price: 155000, image: "https://images.unsplash.com/photo-1515405295579-ba7b45403062?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxjYWxtJTIwYWJzdHJhY3QlMjBhcnR8ZW58MXx8fHwxNzYzNTExNTk5fDA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral" },
-  { id: "WRK-104", title: "Serenity", artist: "高橋 麻衣", price: 190000, image: "https://images.unsplash.com/photo-1634986666676-ec8fd927c23d?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxzZXJlbmUlMjBhYnN0cmFjdCUyMGFydHxlbnwxfHx8fDE3NjM1MTE2MDB8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral" },
-  { id: "WRK-105", title: "Misty Morning", artist: "伊藤 和也", price: 145000, image: "https://images.unsplash.com/photo-1547826039-bfc35e0f1ea8?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxtaXN0eSUyMGFic3RyYWN0fGVufDF8fHx8MTc2MzUxMTYwMHww&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral" },
-  { id: "WRK-106", title: "Tranquil Blue", artist: "渡辺 さくら", price: 170000, image: "https://images.unsplash.com/photo-1550684376-efcbd6e3f031?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHx0cmFucXVpbCUyMGFydHxlbnwxfHx8fDE3NjM1MTE2MDF8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral" }
-];
+function mapArtworkToRecommendationItem(a: Artwork): RecommendationArtworkItem {
+  return {
+    id: a.id,
+    title: a.title,
+    artist: a.artist?.name ?? "—",
+    price: Number(a.price),
+    image: a.main_image_url || "",
+  };
+}
+
+/**
+ * "同じスタイルの作品": try style tags, then dominant color, then medium, then popular.
+ * Optionally excludes IDs already shown in the same-artist row to reduce duplicates.
+ */
+async function fetchSimilarStyledWorks(
+  artwork: Artwork,
+  currentId: string,
+  excludeIds: Set<string>
+): Promise<RecommendationArtworkItem[]> {
+  const mapOther = (items: Artwork[]) =>
+    items
+      .filter((a) => a.id !== currentId && !excludeIds.has(a.id))
+      .slice(0, 12)
+      .map(mapArtworkToRecommendationItem);
+
+  const tryList = async (
+    extra: Omit<
+      NonNullable<Parameters<typeof artworkService.listArtworks>[0]>,
+      "page" | "page_size" | "status"
+    >
+  ) => {
+    const res = await artworkService.listArtworks({
+      ...extra,
+      status: "published",
+      page: 1,
+      page_size: 28,
+    });
+    const out = mapOther(res.items);
+    return out.length > 0 ? out : null;
+  };
+
+  const styleTags = (artwork.style_tags ?? []).filter(Boolean);
+  if (styleTags.length > 0) {
+    const r = await tryList({
+      style_tags: styleTags,
+      sort_by: "favorite_count",
+      sort_order: "desc",
+    });
+    if (r) return r;
+  }
+
+  const dc = artwork.dominant_color?.trim();
+  if (dc) {
+    const r = await tryList({
+      dominant_color: [dc],
+      sort_by: "favorite_count",
+      sort_order: "desc",
+    });
+    if (r) return r;
+  }
+
+  const med = artwork.medium?.trim();
+  if (med) {
+    const r = await tryList({
+      medium: [med],
+      sort_by: "favorite_count",
+      sort_order: "desc",
+    });
+    if (r) return r;
+  }
+
+  const res = await artworkService.listArtworks({
+    status: "published",
+    page: 1,
+    page_size: 28,
+    sort_by: "favorite_count",
+    sort_order: "desc",
+  });
+  return mapOther(res.items);
+}
 
 export function ArtworkViewPage() {
   const { artworkId } = useParams();
   const navigate = useNavigate();
-  const location = useLocation();
   const [searchParams] = useSearchParams();
   const { isAuthenticated, userType } = useAuth();
+
+  const [artwork, setArtwork] = useState<Artwork | null>(null);
+  const [artworkLoading, setArtworkLoading] = useState(true);
+  const [artworkError, setArtworkError] = useState<string | null>(null);
+  const [imageUrls, setImageUrls] = useState<string[]>([]);
   
-  const [selectedImage, setSelectedImage] = useState(mockArtwork.mainImage);
+  const [selectedImage, setSelectedImage] = useState("");
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isLiked, setIsLiked] = useState(false);
   const [showLightbox, setShowLightbox] = useState(false);
@@ -103,7 +136,12 @@ export function ArtworkViewPage() {
   const [signupPromptMode, setSignupPromptMode] = useState<"favorite" | "purchase">("favorite");
   const [showSpaceSelectionModal, setShowSpaceSelectionModal] = useState(false);
 
+  const [relatedByArtist, setRelatedByArtist] = useState<RecommendationArtworkItem[]>([]);
+  const [similarByStyle, setSimilarByStyle] = useState<RecommendationArtworkItem[]>([]);
+  const [recommendationsLoading, setRecommendationsLoading] = useState(false);
+
   const isCorporateUser = userType === "corporate";
+  const isArtistUser = userType === "artist";
   const isFromQR = searchParams.get("source") === "qr";
 
   useEffect(() => {
@@ -113,6 +151,107 @@ export function ArtworkViewPage() {
     const favorites = JSON.parse(localStorage.getItem(storageKey) || "[]");
     setIsLiked(favorites.includes(artworkId));
   }, [artworkId, userType]);
+
+  useEffect(() => {
+    if (!artworkId) {
+      setArtwork(null);
+      setArtworkLoading(false);
+      setArtworkError("作品IDが無効です");
+      return;
+    }
+
+    let cancelled = false;
+    setArtworkLoading(true);
+    setArtworkError(null);
+
+    artworkService
+      .getArtwork(artworkId)
+      .then((data) => {
+        if (cancelled) return;
+        setArtwork(data);
+        const urls = buildImageUrls(data);
+        setImageUrls(urls);
+        const first = urls[0] || data.main_image_url || "";
+        setSelectedImage(first);
+        setCurrentImageIndex(0);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        const msg =
+          err instanceof Error ? err.message : "作品を読み込めませんでした";
+        setArtworkError(msg);
+        setArtwork(null);
+        setImageUrls([]);
+      })
+      .finally(() => {
+        if (!cancelled) setArtworkLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [artworkId]);
+
+  useEffect(() => {
+    if (!artwork?.id || !artwork.artist_id) {
+      setRelatedByArtist([]);
+      setSimilarByStyle([]);
+      return;
+    }
+
+    const currentId = artwork.id;
+    const artistId = artwork.artist_id;
+
+    let cancelled = false;
+    setRecommendationsLoading(true);
+
+    (async () => {
+      try {
+        const resArtist = await artworkService.listArtworks({
+          artist_id: artistId,
+          status: "published",
+          page: 1,
+          page_size: 24,
+          sort_by: "published_at",
+          sort_order: "desc",
+        });
+        if (cancelled) return;
+
+        const relatedList = resArtist.items
+          .filter((a) => a.id !== currentId)
+          .slice(0, 12)
+          .map(mapArtworkToRecommendationItem);
+        setRelatedByArtist(relatedList);
+
+        const excludeFromSimilar = new Set(relatedList.map((r) => r.id));
+
+        let similar = await fetchSimilarStyledWorks(
+          artwork,
+          currentId,
+          excludeFromSimilar
+        );
+        if (cancelled) return;
+
+        if (similar.length === 0 && excludeFromSimilar.size > 0) {
+          similar = await fetchSimilarStyledWorks(artwork, currentId, new Set());
+        }
+        if (cancelled) return;
+
+        setSimilarByStyle(similar);
+      } catch {
+        if (!cancelled) {
+          setRelatedByArtist([]);
+          setSimilarByStyle([]);
+        }
+      } finally {
+        if (!cancelled) setRecommendationsLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [artwork]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -161,15 +300,19 @@ export function ArtworkViewPage() {
   };
 
   const handlePrevImage = () => {
-    const newIndex = currentImageIndex > 0 ? currentImageIndex - 1 : mockArtwork.thumbnails.length - 1;
+    if (imageUrls.length === 0) return;
+    const newIndex =
+      currentImageIndex > 0 ? currentImageIndex - 1 : imageUrls.length - 1;
     setCurrentImageIndex(newIndex);
-    setSelectedImage(mockArtwork.thumbnails[newIndex]);
+    setSelectedImage(imageUrls[newIndex]);
   };
 
   const handleNextImage = () => {
-    const newIndex = currentImageIndex < mockArtwork.thumbnails.length - 1 ? currentImageIndex + 1 : 0;
+    if (imageUrls.length === 0) return;
+    const newIndex =
+      currentImageIndex < imageUrls.length - 1 ? currentImageIndex + 1 : 0;
     setCurrentImageIndex(newIndex);
-    setSelectedImage(mockArtwork.thumbnails[newIndex]);
+    setSelectedImage(imageUrls[newIndex]);
   };
 
   const handleShare = async () => {
@@ -210,11 +353,53 @@ export function ArtworkViewPage() {
     }
   };
 
+  if (artworkLoading) {
+    return (
+      <div className="flex min-h-screen flex-col bg-white">
+        <Header />
+        <main className="flex min-h-0 flex-1 flex-col pt-20 sm:pt-24">
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4 pb-12 sm:pb-20">
+            <Loader2 className="h-10 w-10 animate-spin text-primary" />
+            <p className="text-sm text-gray-600">作品を読み込み中…</p>
+          </div>
+        </main>
+        <div className="mt-auto shrink-0">
+          <Footer />
+        </div>
+      </div>
+    );
+  }
+
+  if (artworkError || !artwork) {
+    return (
+      <div className="flex min-h-screen flex-col bg-white">
+        <Header />
+        <main className="flex min-h-0 flex-1 flex-col pt-20 sm:pt-24">
+          <div className="container mx-auto flex flex-1 flex-col items-center justify-center px-4 pb-12 text-center sm:pb-20 max-w-lg">
+            <p className="mb-2 text-lg text-gray-800">作品を表示できません</p>
+            <p className="mb-6 text-sm text-gray-600">{artworkError}</p>
+            <Button variant="outline" onClick={() => navigate(-1)}>
+              戻る
+            </Button>
+          </div>
+        </main>
+        <div className="mt-auto shrink-0">
+          <Footer />
+        </div>
+      </div>
+    );
+  }
+
+  const rawDim = artwork.dimensions || { width: 0, height: 0 };
+  const dimW = Number(rawDim.width) || 0;
+  const dimH = Number(rawDim.height) || 0;
+  const artistName = artwork.artist?.name || "—";
+
   return (
-    <div className="min-h-screen bg-white">
+    <div className="flex min-h-screen flex-col bg-white">
       <Header />
 
-      <div className="pt-20 sm:pt-24 pb-12 sm:pb-20">
+      <main className="min-h-0 flex-1 pt-20 sm:pt-24 pb-12 sm:pb-20">
         <div className="container mx-auto px-4 sm:px-6 max-w-[1600px]">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -225,7 +410,7 @@ export function ArtworkViewPage() {
             {/* Left Column - Thumbnail Carousel (hidden on mobile, shown on desktop) */}
             <div className="hidden lg:block w-32 flex-shrink-0">
               <div className="sticky top-24 space-y-3">
-                {mockArtwork.thumbnails.map((thumb, index) => (
+                {(imageUrls.length ? imageUrls : [artwork.main_image_url || ""]).map((thumb, index) => (
                   <button
                     key={index}
                     onClick={() => handleThumbnailClick(thumb, index)}
@@ -254,7 +439,7 @@ export function ArtworkViewPage() {
                 >
                   <ImageWithFallback
                     src={selectedImage}
-                    alt={mockArtwork.title}
+                    alt={artwork.title}
                     className="w-full h-full object-cover"
                   />
                   
@@ -266,7 +451,7 @@ export function ArtworkViewPage() {
 
               {/* Mobile Thumbnail Carousel */}
               <div className="lg:hidden mt-4 flex gap-2 overflow-x-auto pb-2">
-                {mockArtwork.thumbnails.map((thumb, index) => (
+                {(imageUrls.length ? imageUrls : [artwork.main_image_url || ""]).map((thumb, index) => (
                   <button
                     key={index}
                     onClick={() => handleThumbnailClick(thumb, index)}
@@ -292,12 +477,13 @@ export function ArtworkViewPage() {
                 <Card className="border-gray-200 shadow-lg">
                   <CardContent className="p-4 sm:p-8 space-y-4 sm:space-y-6">
                     <div className="space-y-1.5 sm:space-y-2">
-                      <h1 className="text-2xl sm:text-3xl text-primary">{mockArtwork.title}</h1>
+                      <h1 className="text-2xl sm:text-3xl text-primary">{artwork.title}</h1>
                       <button
+                        type="button"
                         onClick={() => navigate(`/artists`)}
                         className="text-base sm:text-lg text-gray-600 hover:text-primary transition-colors"
                       >
-                        {mockArtwork.artist.name}
+                        {artistName}
                       </button>
                     </div>
 
@@ -307,11 +493,11 @@ export function ArtworkViewPage() {
                       <div className="flex items-baseline gap-2 sm:gap-3">
                         <span className="text-[10px] sm:text-xs text-gray-500 uppercase tracking-wider">サイズ</span>
                         <Badge variant="secondary" className="text-xs sm:text-sm">
-                          {mockArtwork.sizeClass}
+                          {artwork.size_class || "—"}
                         </Badge>
                       </div>
                       <p className="text-sm sm:text-base text-gray-700">
-                        {mockArtwork.dimensions.width} × {mockArtwork.dimensions.height} cm
+                        {dimW} × {dimH} cm
                       </p>
                     </div>
 
@@ -319,21 +505,23 @@ export function ArtworkViewPage() {
 
                     <div className="space-y-1.5 sm:space-y-2">
                       <span className="text-[10px] sm:text-xs text-gray-500 uppercase tracking-wider">技法・素材</span>
-                      <p className="text-sm sm:text-base text-gray-700">{mockArtwork.medium} / {mockArtwork.support}</p>
+                      <p className="text-sm sm:text-base text-gray-700">
+                        {[artwork.medium, artwork.support].filter(Boolean).join(" / ") || "—"}
+                      </p>
                     </div>
 
                     <Separator />
 
                     <div className="space-y-1.5 sm:space-y-2">
                       <span className="text-[10px] sm:text-xs text-gray-500 uppercase tracking-wider block">額縁</span>
-                      <p className="text-sm sm:text-base text-gray-700">{mockArtwork.hasFrame ? "あり" : "なし"}</p>
+                      <p className="text-sm sm:text-base text-gray-700">{artwork.has_frame ? "あり" : "なし"}</p>
                     </div>
 
                     <Separator />
 
                     <div className="space-y-1.5 sm:space-y-2">
                       <span className="text-[10px] sm:text-xs text-gray-500 uppercase tracking-wider">制作年</span>
-                      <p className="text-sm sm:text-base text-gray-700">{mockArtwork.year}</p>
+                      <p className="text-sm sm:text-base text-gray-700">{artwork.year ?? "—"}</p>
                     </div>
 
                     <Separator />
@@ -342,34 +530,40 @@ export function ArtworkViewPage() {
                       <div>
                         <span className="text-[10px] sm:text-xs text-gray-500 uppercase tracking-wider block mb-1 sm:mb-2">販売価格</span>
                         <p className="text-2xl sm:text-3xl text-primary">
-                          ¥{mockArtwork.price.toLocaleString()}
+                          ¥{Number(artwork.price).toLocaleString("ja-JP")}
                         </p>
                       </div>
                     </div>
 
-                    <Separator />
+                    {!isArtistUser && (
+                      <>
+                        <Separator />
 
-                    <div className="space-y-2 sm:space-y-3 pt-2 sm:pt-4">
-                      <Button
-                        onClick={handlePurchase}
-                        size="lg"
-                        className="w-full h-11 sm:h-12 bg-primary hover:bg-primary/90 text-sm sm:text-base"
-                      >
-                        {isAuthenticated && isCorporateUser ? "この作品を展示する" : "購入する"}
-                      </Button>
-                      
-                      {isCorporateUser && (
-                        <Button
-                          onClick={() => setShowSpaceSelectionModal(true)}
-                          size="lg"
-                          variant="outline"
-                          className="w-full h-11 sm:h-12 border-primary text-primary hover:bg-primary/5 text-sm sm:text-base"
-                        >
-                          <Eye className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
-                          スペースでイメージを確認
-                        </Button>
-                      )}
-                    </div>
+                        <div className="space-y-2 sm:space-y-3 pt-2 sm:pt-4">
+                          <Button
+                            onClick={handlePurchase}
+                            size="lg"
+                            className="w-full h-11 sm:h-12 bg-primary hover:bg-primary/90 text-sm sm:text-base"
+                          >
+                            {isAuthenticated && isCorporateUser
+                              ? "この作品を展示する"
+                              : "購入する"}
+                          </Button>
+
+                          {isCorporateUser && (
+                            <Button
+                              onClick={() => setShowSpaceSelectionModal(true)}
+                              size="lg"
+                              variant="outline"
+                              className="w-full h-11 sm:h-12 border-primary text-primary hover:bg-primary/5 text-sm sm:text-base"
+                            >
+                              <Eye className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
+                              スペースでイメージを確認
+                            </Button>
+                          )}
+                        </div>
+                      </>
+                    )}
 
                     <Separator />
 
@@ -379,12 +573,23 @@ export function ArtworkViewPage() {
                           if (!isAuthenticated) {
                             setShowSignupPrompt(true);
                             setSignupPromptMode("favorite");
+                          } else if (userType === "corporate") {
+                            // Corporate: persist to DB via API
+                            const newIsLiked = !isLiked;
+                            setIsLiked(newIsLiked);
+                            toggleFavorite(artworkId, !newIsLiked)
+                              .then(({ isFavorited }) => {
+                                toast.success(isFavorited ? "お気に入りに追加しました" : "お気に入りから削除しました");
+                              })
+                              .catch(() => {
+                                setIsLiked(!newIsLiked);
+                                toast.error("お気に入りの更新に失敗しました");
+                              });
                           } else {
                             const newIsLiked = !isLiked;
                             setIsLiked(newIsLiked);
-                            
                             const storageKey = getFavoritesKey(userType);
-                            const favorites = JSON.parse(localStorage.getItem(storageKey) || "[]");
+                            const favorites = JSON.parse(localStorage.getItem(storageKey) || "[]") as string[];
                             if (newIsLiked) {
                               if (!favorites.includes(artworkId)) {
                                 favorites.push(artworkId);
@@ -399,7 +604,6 @@ export function ArtworkViewPage() {
                                 toast.success("お気に入りから削除しました");
                               }
                             }
-                            
                             window.dispatchEvent(new Event("favoritesUpdated"));
                           }
                         }}
@@ -437,14 +641,18 @@ export function ArtworkViewPage() {
 
             <div className="max-w-4xl mx-auto space-y-6 sm:space-y-8">
               <div className="prose prose-sm sm:prose-lg max-w-none">
-                <p className="text-sm sm:text-base text-gray-700 leading-relaxed">{mockArtwork.description}</p>
+                <p className="text-sm sm:text-base text-gray-700 leading-relaxed">
+                  {artwork.description?.trim() || "説明は登録されていません。"}
+                </p>
               </div>
 
               <Separator />
 
               <div className="prose prose-sm sm:prose-lg max-w-none">
                 <h3 className="text-lg sm:text-xl text-primary mb-3 sm:mb-4">ストーリー</h3>
-                <p className="text-sm sm:text-base text-gray-700 leading-relaxed">{mockArtwork.story}</p>
+                <p className="text-sm sm:text-base text-gray-700 leading-relaxed">
+                  {artwork.story?.trim() || "—"}
+                </p>
               </div>
             </div>
           </motion.section>
@@ -462,81 +670,61 @@ export function ArtworkViewPage() {
 
             <div className="max-w-4xl mx-auto">
               <div className="flex flex-col sm:flex-row gap-6 sm:gap-12 items-start">
-                <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-full overflow-hidden flex-shrink-0 shadow-lg mx-auto sm:mx-0">
+                <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-full overflow-hidden flex-shrink-0 shadow-lg mx-auto sm:mx-0 bg-gray-100">
                   <ImageWithFallback
-                    src={mockArtwork.artist.photo}
-                    alt={mockArtwork.artist.name}
+                    src={
+                      artwork.artist?.profile_image_url ||
+                      "https://images.unsplash.com/photo-1625682103688-2ab73a4fb11a?w=400"
+                    }
+                    alt={artistName}
                     className="w-full h-full object-cover"
                   />
                 </div>
 
                 <div className="flex-1 space-y-4 sm:space-y-6">
                   <div>
-                    <h3 className="text-xl sm:text-2xl text-primary mb-1 sm:mb-2">{mockArtwork.artist.name}</h3>
-                    <p className="text-sm sm:text-base text-gray-700 leading-relaxed">{mockArtwork.artist.bio}</p>
-                  </div>
-
-                  <Separator />
-
-                  <div>
-                    <h4 className="text-xs sm:text-sm text-gray-500 uppercase tracking-wider mb-2 sm:mb-3">学歴</h4>
-                    <p className="text-sm sm:text-base text-gray-700">{mockArtwork.artist.education}</p>
-                  </div>
-
-                  <Separator />
-
-                  <div>
-                    <h4 className="text-xs sm:text-sm text-gray-500 uppercase tracking-wider mb-2 sm:mb-3">展示歴</h4>
-                    <ul className="space-y-1.5 sm:space-y-2">
-                      {mockArtwork.artist.exhibitions.map((exhibition, index) => (
-                        <li key={index} className="text-sm sm:text-base text-gray-700">{exhibition}</li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  <Separator />
-
-                  <div>
-                    <h4 className="text-xs sm:text-sm text-gray-500 uppercase tracking-wider mb-2 sm:mb-3">受賞歴</h4>
-                    <ul className="space-y-1.5 sm:space-y-2">
-                      {mockArtwork.artist.awards.map((award, index) => (
-                        <li key={index} className="text-sm sm:text-base text-gray-700">{award}</li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  <Separator />
-
-                  <div className="flex flex-col sm:flex-row gap-4 sm:gap-6">
-                    <a href={mockArtwork.artist.website} target="_blank" rel="noopener noreferrer" className="text-xs sm:text-sm text-primary hover:underline">
-                      Website
-                    </a>
-                    <a href={`https://instagram.com/${mockArtwork.artist.instagram.replace('@', '')}`} target="_blank" rel="noopener noreferrer" className="text-xs sm:text-sm text-primary hover:underline">
-                      Instagram
-                    </a>
+                    <h3 className="text-xl sm:text-2xl text-primary mb-1 sm:mb-2">{artistName}</h3>
+                    <p className="text-sm sm:text-base text-gray-600 leading-relaxed">
+                      作家の詳細プロフィールは順次公開予定です。
+                    </p>
                   </div>
                 </div>
               </div>
             </div>
           </motion.section>
 
-          <RecommendationSection
-            title="同じ作家の作品"
-            subtitle="Related Works"
-            artworks={mockRelatedArtworks}
-            onArtworkClick={handleArtworkClick}
-          />
+          {recommendationsLoading ? (
+            <div className="space-y-10 sm:space-y-14">
+              <div className="h-48 animate-pulse rounded-xl bg-gray-100 sm:h-56" />
+              <div className="h-48 animate-pulse rounded-xl bg-gray-100 sm:h-56" />
+            </div>
+          ) : (
+            <>
+              {relatedByArtist.length > 0 && (
+                <RecommendationSection
+                  title="同じ作家の作品"
+                  subtitle="Related Works"
+                  artworks={relatedByArtist}
+                  onArtworkClick={handleArtworkClick}
+                />
+              )}
 
-          <RecommendationSection
-            title="同じスタイルの作品"
-            subtitle="Similar Taste"
-            artworks={mockSimilarTasteArtworks}
-            onArtworkClick={handleArtworkClick}
-          />
+              {similarByStyle.length > 0 && (
+                <RecommendationSection
+                  title="同じスタイルの作品"
+                  subtitle="Similar Taste"
+                  artworks={similarByStyle}
+                  onArtworkClick={handleArtworkClick}
+                />
+              )}
+            </>
+          )}
         </div>
-      </div>
+      </main>
 
-      <Footer />
+      <div className="mt-auto shrink-0">
+        <Footer />
+      </div>
 
       {showLightbox && (
         <div 
@@ -572,14 +760,16 @@ export function ArtworkViewPage() {
 
           <ImageWithFallback
             src={selectedImage}
-            alt={mockArtwork.title}
+            alt={artwork.title}
             className="max-w-full max-h-full object-contain"
             onClick={(e) => e.stopPropagation()}
           />
 
           <div className="absolute bottom-4 sm:bottom-6 left-1/2 -translate-x-1/2 bg-white/10 backdrop-blur-sm px-3 sm:px-4 py-1.5 sm:py-2 rounded-full">
             <span className="text-white text-xs sm:text-sm">
-              {currentImageIndex + 1} / {mockArtwork.thumbnails.length}
+              {imageUrls.length > 0
+                ? `${currentImageIndex + 1} / ${imageUrls.length}`
+                : "—"}
             </span>
           </div>
         </div>
@@ -588,15 +778,15 @@ export function ArtworkViewPage() {
       <SignupPromptDialog
         isOpen={showSignupPrompt}
         onClose={() => setShowSignupPrompt(false)}
-        artworkId={artworkId || "WRK-001"}
-        artworkTitle={mockArtwork.title}
+        artworkId={artworkId || artwork.id}
+        artworkTitle={artwork.title}
         mode={signupPromptMode}
       />
 
       <SpaceSelectionModal
         open={showSpaceSelectionModal}
         onOpenChange={setShowSpaceSelectionModal}
-        artworkId={parseInt(artworkId || "1")}
+        artworkId={artworkId}
       />
     </div>
   );
@@ -605,13 +795,7 @@ export function ArtworkViewPage() {
 interface RecommendationSectionProps {
   title: string;
   subtitle: string;
-  artworks: Array<{
-    id: string;
-    title: string;
-    artist: string;
-    price: number;
-    image: string;
-  }>;
+  artworks: RecommendationArtworkItem[];
   onArtworkClick: (id: string) => void;
 }
 
@@ -619,6 +803,10 @@ function RecommendationSection({ title, subtitle, artworks, onArtworkClick }: Re
   const [scrollPosition, setScrollPosition] = useState(0);
   const itemsPerView = 4;
   const maxScroll = Math.max(0, artworks.length - itemsPerView);
+
+  useEffect(() => {
+    setScrollPosition(0);
+  }, [artworks]);
 
   const handlePrev = () => {
     setScrollPosition((prev) => Math.max(0, prev - 1));

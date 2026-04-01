@@ -22,6 +22,7 @@ import {
 
 import { useAuth } from "@/contexts/AuthContext";
 import { getFavoritesKey } from "@/lib/storageKeys";
+import { fetchFavoriteIds } from "@/services/corporateFavorites.service";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -74,7 +75,7 @@ export function Header() {
     };
   }, [lastScrollY]);
 
-  // Handle favorites count
+  // Handle favorites count — read from localStorage (kept in sync by service layer)
   useEffect(() => {
     const updateFavoritesCount = () => {
       if (isAuthenticated) {
@@ -95,6 +96,13 @@ export function Header() {
       window.removeEventListener("favoritesUpdated", updateFavoritesCount);
       window.removeEventListener("storage", updateFavoritesCount);
     };
+  }, [isAuthenticated, userType]);
+
+  // Seed localStorage from DB on corporate login so the badge is accurate
+  useEffect(() => {
+    if (isAuthenticated && userType === "corporate") {
+      fetchFavoriteIds().catch(() => {/* silent — falls back to localStorage */});
+    }
   }, [isAuthenticated, userType]);
 
   const handleLogout = () => {

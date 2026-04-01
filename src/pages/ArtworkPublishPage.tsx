@@ -23,6 +23,7 @@ import { artworkService, type Artwork } from "@/services/artwork.service";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { ImageWithFallback } from "@/components/common/ImageWithFallback";
+import { consumeOnboardingPublishedIds } from "@/lib/artworkGoOnlineFlow";
 
 export function ArtworkPublishPage() {
   const navigate = useNavigate();
@@ -41,7 +42,7 @@ export function ArtworkPublishPage() {
     other: "その他",
   };
 
-  // Load published artworks from API
+  /** Only works published in the current onboarding session (not the entire gallery). */
   useEffect(() => {
     if (!isInitialized) return;
 
@@ -51,52 +52,64 @@ export function ArtworkPublishPage() {
       return;
     }
 
-    if (currentUser?.id) {
-      loadPublishedArtworks();
-    }
-  }, [isInitialized, isAuthenticated, userType, currentUser?.id, navigate]);
-
-  const loadPublishedArtworks = async () => {
     if (!currentUser?.id) return;
 
-    setIsLoading(true);
-    try {
-      // Fetch only published artworks for the current artist
-      const response = await artworkService.listArtworks({
-        page: 1,
-        page_size: 100,
-        artist_id: currentUser.id,
-        status: "published", // Only fetch published artworks
-      });
+    let cancelled = false;
+    (async () => {
+      setIsLoading(true);
+      const ids = consumeOnboardingPublishedIds();
+      if (ids.length === 0) {
+        if (!cancelled) {
+          setPublishedArtworks([]);
+          setIsLoading(false);
+        }
+        return;
+      }
 
-      // Map API response to match the expected format
-      const mappedArtworks = response.items.map((artwork: Artwork) => ({
-        id: artwork.id,
-        name: artwork.title,
-        price: Number(artwork.price).toLocaleString(),
-        width: artwork.dimensions?.width || 0,
-        height: artwork.dimensions?.height || 0,
-        depth: artwork.dimensions?.depth || 0,
-        year: artwork.year?.toString() || "",
-        technique: artwork.medium ? (techniqueOptions[artwork.medium] || artwork.medium) : "",
-        theme: artwork.story || artwork.description || "",
-        hasImage: !!artwork.main_image_url,
-        isVideo: false,
-        tags: artwork.style_tags || [],
-        main_image_url: artwork.main_image_url,
-        custom_id: artwork.custom_id,
-        status: artwork.status, // Include status
-      }));
+      try {
+        const results = await Promise.all(
+          ids.map((id) =>
+            artworkService.getArtwork(id).catch(() => null)
+          )
+        );
+        if (cancelled) return;
+        const mine = results.filter(
+          (a): a is Artwork =>
+            a !== null && a.artist_id === currentUser.id
+        );
+        const mappedArtworks = mine.map((artwork: Artwork) => ({
+          id: artwork.id,
+          name: artwork.title,
+          price: Number(artwork.price).toLocaleString(),
+          width: artwork.dimensions?.width || 0,
+          height: artwork.dimensions?.height || 0,
+          depth: artwork.dimensions?.depth || 0,
+          year: artwork.year?.toString() || "",
+          technique: artwork.medium
+            ? techniqueOptions[artwork.medium] || artwork.medium
+            : "",
+          theme: artwork.story || artwork.description || "",
+          hasImage: !!artwork.main_image_url,
+          isVideo: false,
+          tags: artwork.style_tags || [],
+          main_image_url: artwork.main_image_url,
+          custom_id: artwork.custom_id,
+          status: artwork.status,
+        }));
+        setPublishedArtworks(mappedArtworks);
+      } catch (error: unknown) {
+        console.error("Failed to load session published artworks:", error);
+        toast.error("作品の読み込みに失敗しました");
+        setPublishedArtworks([]);
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    })();
 
-      setPublishedArtworks(mappedArtworks);
-    } catch (error: any) {
-      console.error("Failed to load published artworks:", error);
-      toast.error("公開作品の読み込みに失敗しました");
-      setPublishedArtworks([]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    return () => {
+      cancelled = true;
+    };
+  }, [isInitialized, isAuthenticated, userType, currentUser?.id, navigate]);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -199,7 +212,16 @@ export function ArtworkPublishPage() {
                   transition={{ delay: 0.7, duration: 0.8 }}
                   className="text-lg sm:text-xl text-gray-600 mb-4 leading-relaxed px-2"
                 >
-                  {publishedArtworks.length}作品が、MGJのギャラリーに公開されています。
+                  {publishedArtworks.length > 0 ? (
+                    <>
+                      今回、{publishedArtworks.length}
+                      件の作品をMGJのギャラリーにオンライン公開しました。
+                    </>
+                  ) : (
+                    <>
+                      マイページの「作品」から、いつでも公開状況を確認・変更できます。
+                    </>
+                  )}
                 </motion.p>
               </motion.div>
             </div>
@@ -287,10 +309,14 @@ export function ArtworkPublishPage() {
                 className="text-center mb-8 sm:mb-12"
               >
                 <h2 className="text-2xl sm:text-3xl text-[#3A3A3A] mb-3 sm:mb-4">
-                  公開された作品
+                  {publishedArtworks.length > 0
+                    ? "今回オンライン公開した作品"
+                    : "ギャラリーについて"}
                 </h2>
                 <p className="text-base sm:text-lg text-gray-600">
-                  以下の作品が、現在MGJのギャラリーで公開されています
+                  {publishedArtworks.length > 0
+                    ? "このセッションで「オンラインで公開する」を選んだ作品です"
+                    : "作品の追加・編集はマイページから行えます"}
                 </p>
               </motion.div>
 
@@ -311,16 +337,16 @@ export function ArtworkPublishPage() {
                   <CardContent>
                     <ImageIcon className="w-12 h-12 sm:w-16 sm:h-16 text-gray-300 mx-auto mb-4" />
                     <h3 className="text-xl sm:text-2xl text-gray-600 mb-2">
-                      公開中の作品がありません
+                      表示する作品がありません
                     </h3>
                     <p className="text-sm sm:text-base text-gray-500 mb-6">
-                      作品を公開すると、ここに表示されます。
+                      直リンクで開いた場合や、セッション情報がない場合は一覧を表示できません。マイページの「作品」から状態を確認してください。
                     </p>
                     <Button
-                      onClick={() => navigate("/artwork-selection")}
+                      onClick={() => navigate("/dashboard#artworks")}
                       className="bg-[#C3A36D] hover:bg-[#C3A36D]/90 rounded-xl"
                     >
-                      作品を公開する
+                      マイページへ
                     </Button>
                   </CardContent>
                 </Card>

@@ -4,6 +4,29 @@
  */
 import { api } from "@/lib/api";
 
+/** DB granular statuses grouped under the 「輸送中」 filter */
+export const ARTWORK_IN_TRANSIT_DB_STATUSES = [
+  "in_transit_exhibition",
+  "in_transit_corporate_return",
+  "in_transit_recall",
+  "recall_pending",
+] as const;
+
+/** DB statuses: arrived at artist or soft-withdrawn (「アーティストに返却済み」 filter) */
+export const ARTWORK_RETURNED_AT_ARTIST_STATUSES = [
+  "returned_corporate",
+  "returned_recall",
+  "withdrawn",
+] as const;
+
+export function isArtworkInTransitFamily(status: string): boolean {
+  return (ARTWORK_IN_TRANSIT_DB_STATUSES as readonly string[]).includes(status);
+}
+
+export function isArtworkReturnedAtArtistFamily(status: string): boolean {
+  return (ARTWORK_RETURNED_AT_ARTIST_STATUSES as readonly string[]).includes(status);
+}
+
 export interface ArtworkImage {
   id: string;
   image_url: string;
@@ -20,9 +43,26 @@ export interface Artwork {
   story?: string;
   price: number;
   lease_price?: number;
-  status: "draft" | "published" | "exhibited" | "sold" | "recalled";
+  status:
+    | "draft"
+    | "published"
+    | "exhibited"
+    | "exhibition_requested"
+    | "in_transit_exhibition"
+    | "in_transit_corporate_return"
+    | "in_transit_recall"
+    | "recall_pending"
+    | "returned_corporate"
+    | "returned_recall"
+    | "withdrawn"
+    | "sold"
+    | "rented"
+    | string;
   main_image_url?: string;
+  /** Gallery images (GET detail includes for owner / published). */
   images?: ArtworkImage[];
+  /** Fallback when building carousel if images is empty (API may send thumbnails). */
+  thumbnail_urls?: string[];
   artist_id: string;
   artist?: {
     id: string;
@@ -49,6 +89,17 @@ export interface Artwork {
   created_at: string;
   published_at?: string;
   view_count: number;
+  favorite_count?: number;
+  /** When status is in_transit: exhibition leg vs return/recall (from GET /artworks). */
+  in_transit_kind?:
+    | "to_corporate"
+    | "return_to_artist"
+    | "recall_pending"
+    | "recall_in_transit"
+    | string
+    | null;
+  /** Artist dashboard: work on wall with corporate return pending (status may be exhibited). */
+  artist_pipeline_kind?: "corporate_return_pending" | null;
 }
 
 export interface ArtworkListResponse {
@@ -57,6 +108,53 @@ export interface ArtworkListResponse {
   page: number;
   page_size: number;
   total_pages?: number;
+}
+
+/** GET /artworks/{id}/online-confirm/context — post-registration オンライン公開確認 */
+export interface OnlineConfirmContext {
+  artwork_id: string;
+  title?: string;
+  status: string;
+  main_image_url?: string;
+  price?: number;
+  can_publish: boolean;
+  message?: string | null;
+  /** When draft is incomplete: title / price / main_image_url */
+  missing_fields?: string[] | null;
+}
+
+/** GET /artworks/me/status-counts — artist dashboard filter badges */
+export interface ArtistArtworkStatusCounts {
+  all: number;
+  draft: number;
+  published: number;
+  exhibition_requested: number;
+  exhibited: number;
+  /** All in-transit legs (to corporate, return to artist, recall, etc.). */
+  in_transit: number;
+  /** Shipped to venue; awaiting corporate receipt. */
+  in_transit_to_corporate?: number;
+  /** Return/recall pipeline toward artist (in_transit rows classified as return leg). */
+  in_transit_return?: number;
+  /** Corporate return requested (pending/approved) while work still on display. */
+  return_requested?: number;
+  /** Artist recall: awaiting corporate ship (recall_pending kind). */
+  recall_requested?: number;
+  sold: number;
+  recalled: number;
+}
+
+/** GET /artworks/{id}/issue-reports — artist-only */
+export interface ArtistIssueReportItem {
+  id: string;
+  assignment_id: string;
+  issue_type: string;
+  description: string;
+  status: string;
+  discovered_at: string | null;
+  created_at: string;
+  space_name: string | null;
+  photo_urls: string[] | null;
 }
 
 export interface CreateArtworkRequest {
@@ -127,6 +225,17 @@ export const artworkService = {
     date_to?: string;
     sort_by?: string;
     sort_order?: "asc" | "desc";
+    /** Catalog sidebar: substring match on artist name (independent of `search`) */
+    artist_name?: string;
+    /** Catalog: exact hex match (MGJ palette), OR semantics — backend filters after query */
+    dominant_color?: string[];
+    /** Catalog price buckets: 1-5, 5-10, 10-20, 20+ — OR semantics — backend */
+    price_range?: string[];
+    /**
+     * If true, backend excludes works currently on display (any corporate space).
+     * Use with status=published for corporate manual exhibition-request pickers.
+     */
+    eligible_for_corporate_assignment?: boolean;
   }): Promise<ArtworkListResponse> {
     const queryParams = new URLSearchParams();
     if (params) {
@@ -151,6 +260,15 @@ export const artworkService = {
    */
   async getArtwork(artworkId: string): Promise<Artwork> {
     return api.get<Artwork>(`/artworks/${artworkId}`);
+  },
+
+  /**
+   * Artist-only: eligibility for POST publish-online (same validation, no mutation).
+   */
+  async getOnlineConfirmContext(artworkId: string): Promise<OnlineConfirmContext> {
+    return api.get<OnlineConfirmContext>(
+      `/artworks/${artworkId}/online-confirm/context`
+    );
   },
 
   /**
@@ -211,10 +329,11 @@ export const artworkService = {
   },
 
   /**
-   * Publish artwork
+   * Publish artwork (draft → published). Uses backend publish-online endpoint
+   * aligned with the オンライン公開確認 screen.
    */
   async publishArtwork(artworkId: string): Promise<Artwork> {
-    return api.post<Artwork>(`/artworks/${artworkId}/publish`, {});
+    return api.post<Artwork>(`/artworks/${artworkId}/publish-online`, {});
   },
 
   /**
@@ -222,6 +341,18 @@ export const artworkService = {
    */
   async unpublishArtwork(artworkId: string): Promise<Artwork> {
     return api.post<Artwork>(`/artworks/${artworkId}/unpublish`, {});
+  },
+
+  /**
+   * Artist: exhibition pipeline — mark shipped (assignment pending → in_transit, artwork → in_transit).
+   * Mock for now: no carrier API; user confirms after physically shipping.
+   */
+  async markExhibitionShipped(artworkId: string): Promise<{
+    message: string;
+    assignment_id: string;
+    status: string;
+  }> {
+    return api.post(`/artworks/${artworkId}/exhibition/mark-shipped`, {});
   },
 
   /**
@@ -266,6 +397,52 @@ export const artworkService = {
   /**
    * Get exhibition/assignment information for an artwork
    */
+  async requestRecall(artworkId: string): Promise<{
+    message: string;
+    assignment_id: string;
+    artwork_id: string;
+    status: string;
+  }> {
+    return api.post(`/artworks/${artworkId}/request-recall`, {});
+  },
+
+  /** Artist confirms physical receipt after corporate return request */
+  async confirmReturnArrival(artworkId: string): Promise<{
+    message: string;
+    artwork_id: string;
+    assignment_id: string;
+    return_request_id: string;
+    status: string;
+  }> {
+    return api.post(`/artworks/${artworkId}/confirm-return-arrival`, {});
+  },
+
+  /** Artist confirms receipt after corporate shipped an artist-initiated recall (no return_requests row) */
+  async confirmRecallArrival(artworkId: string): Promise<{
+    message: string;
+    artwork_id: string;
+    assignment_id: string;
+    status: string;
+  }> {
+    return api.post(`/artworks/${artworkId}/confirm-recall-arrival`, {});
+  },
+
+  /** Corporate damage/defect reports for artist (dashboard badge + edit page) */
+  async getOpenIssueReportSummary(): Promise<{ counts: Record<string, number> }> {
+    return api.get(`/artworks/issue-reports/open-summary`);
+  },
+
+  /** Artist-only: counts per dashboard status chip (aligned with list filters) */
+  async getMyArtworkStatusCounts(): Promise<ArtistArtworkStatusCounts> {
+    return api.get(`/artworks/me/status-counts`);
+  },
+
+  async listArtworkIssueReports(artworkId: string): Promise<{
+    items: ArtistIssueReportItem[];
+  }> {
+    return api.get(`/artworks/${encodeURIComponent(artworkId)}/issue-reports`);
+  },
+
   async getExhibitionInfo(artworkId: string): Promise<{
     is_exhibited: boolean;
     assignment: {
@@ -286,8 +463,41 @@ export const artworkService = {
         contact_phone?: string;
       };
       qr_scan_count: number;
+      artist_recall_requested_at?: string | null;
     } | null;
+    /** Active corporate return request for this assignment, if any */
+    return_request?: {
+      id: string;
+      status: string;
+      requested_date?: string | null;
+      reason?: string | null;
+    } | null;
+    recall_awaiting_corporate_ship?: boolean;
+    recall_awaiting_artist_confirm?: boolean;
   }> {
     return api.get(`/artworks/${artworkId}/exhibition`);
+  },
+
+  /** Artist: pending / in_transit exhibition pipeline — shipping destination + mark shipped flag */
+  async getExhibitionRequestContext(artworkId: string): Promise<{
+    has_exhibition_request: boolean;
+    assignment: { id: string; status: string } | null;
+    space: {
+      id?: string | null;
+      name?: string | null;
+      address?: string | null;
+    } | null;
+    corporate: {
+      company_name?: string | null;
+      postal_code?: string | null;
+      address?: string | null;
+      address_formatted?: string | null;
+      contact_name?: string | null;
+      contact_email?: string | null;
+      contact_phone?: string | null;
+    } | null;
+    can_mark_shipped: boolean;
+  }> {
+    return api.get(`/artworks/${encodeURIComponent(artworkId)}/exhibition-request/context`);
   },
 };

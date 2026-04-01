@@ -1,8 +1,10 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useRefreshOnInterval } from "@/hooks/useRefreshOnInterval";
 import { motion, AnimatePresence } from "motion/react";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { useAuth } from "@/contexts/AuthContext";
+import { useCorporateOrgRole } from "@/hooks/useCorporateOrgRole";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -21,15 +23,14 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Legend
 } from "recharts";
 import {
-  Eye,
   Sparkles,
   ChevronRight,
   Edit,
   RefreshCw,
   Package,
+  Truck,
   AlertCircle,
   Bell,
   Users,
@@ -54,14 +55,30 @@ import {
   getSpace,
   updateSpace as updateSpaceApi,
   deleteSpace as deleteSpaceApi,
+  getSpaceArtworkHistory,
+  assignSpaceArtwork,
+  confirmExhibitionDisplay,
+  getQrAnalytics,
+  markReturnRequestShipped,
+  markRecallShipped,
+  type SpaceArtworkHistoryItem,
   type SpaceResponse,
+  type QrAnalyticsResponse,
+  type QrAnalyticsUiPeriod,
 } from "@/services/space.service";
+import { artworkService, type Artwork } from "@/services/artwork.service";
+import { ManualArtworkSelectDialog } from "@/components/corporate/ManualArtworkSelectDialog";
 import {
   getSpaceQRCode,
   generateSpaceQRCode,
   downloadSpaceQRCodeImage,
   type SpaceQRCodeResponse,
 } from "@/services/qr.service";
+import {
+  artworkStatusLabelJa,
+  badgeClassForArtworkStatusVariant,
+  type ArtworkStatusDisplayVariant,
+} from "@/utils/artworkStatusDisplay";
 
 const DEFAULT_SPACE_IMAGE =
   "https://images.unsplash.com/photo-1497366754035-f200968a6e72?w=1200";
@@ -93,6 +110,7 @@ function mapSpaceResponseToDetailData(s: SpaceResponse) {
       ? new Date(s.updated_at).toLocaleDateString("ja-JP")
       : new Date().toLocaleDateString("ja-JP"),
     artworksCount: s.current_artwork_id ? 1 : 0,
+    current_artwork_id: s.current_artwork_id ?? null,
     wallSize: "未設定",
     lighting: "未設定",
     type: s.facility_type,
@@ -100,6 +118,139 @@ function mapSpaceResponseToDetailData(s: SpaceResponse) {
     images: imgs,
     totalRevenue: 0,
     totalSales: 0,
+    qr_code_id: s.qr_code_id ?? null,
+    corporate_return_pending: s.corporate_return_pending ?? false,
+    artist_recall_pending: s.artist_recall_pending ?? false,
+    artist_recall_awaiting_artist_confirm:
+      s.artist_recall_awaiting_artist_confirm ?? false,
+    pending_exhibition_assignment_id: s.pending_exhibition_assignment_id ?? null,
+    pending_exhibition_artwork_id: s.pending_exhibition_artwork_id ?? null,
+    pending_exhibition_status: s.pending_exhibition_status ?? null,
+    pending_exhibition_has_outbound_shipment:
+      s.pending_exhibition_has_outbound_shipment ?? false,
+    active_return_request_id: s.active_return_request_id ?? null,
+    active_return_request_status: s.active_return_request_status ?? null,
+  };
+}
+
+function formatDisplayPeriod(item: SpaceArtworkHistoryItem): string {
+  const start = item.display_start_date ?? item.assigned_at ?? undefined;
+  const end = item.display_end_date ?? item.removed_at ?? undefined;
+  const fmt = (raw: string | undefined) => {
+    if (!raw) return "";
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) return raw;
+    return d.toLocaleDateString("ja-JP");
+  };
+  if (start && end) return `${fmt(start)} ～ ${fmt(end)}`;
+  if (start && item.assignment_status === "displaying") {
+    return `${fmt(start)} ～ 現在`;
+  }
+  if (start) return `${fmt(start)} ～`;
+  return "—";
+}
+
+function assignmentStatusLabel(status: string): string {
+  switch (status) {
+    case "displaying":
+      return "展示中";
+    case "returned":
+      return "展示終了";
+    case "pending":
+      return "承認待ち";
+    case "approved":
+      return "承認済";
+    case "in_transit":
+      return "発送済み（法人確認待ち）";
+    case "cancelled":
+      return "キャンセル";
+    default:
+      return status || "—";
+  }
+}
+
+function formatQrChartDayLabel(isoDate: string): string {
+  const d = new Date(`${isoDate}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return isoDate;
+  return d.toLocaleDateString("ja-JP", { month: "numeric", day: "numeric" });
+}
+
+function qrAnalyticsChartRows(
+  rows: QrAnalyticsResponse["scans_by_day"] | undefined,
+): { label: string; date: string; scans: number }[] {
+  if (!rows?.length) return [];
+  return rows.map((r) => ({
+    date: r.date,
+    label: formatQrChartDayLabel(r.date),
+    scans: r.scans,
+  }));
+}
+
+function periodLabelJa(period: QrAnalyticsUiPeriod): string {
+  switch (period) {
+    case "week":
+      return "直近7日間";
+    case "month":
+      return "直近30日間";
+    case "quarter":
+      return "直近90日間";
+    default:
+      return "この期間";
+  }
+}
+
+function buildQrAnalyticsSummary(
+  a: QrAnalyticsResponse,
+  uiPeriod: QrAnalyticsUiPeriod,
+): string {
+  const range = periodLabelJa(uiPeriod);
+  const total = a.total_scans;
+  const prev = a.previous_period_total;
+  let part = `${range}のQRスキャン（読み取りからリダイレクトまでを記録）は ${total} 回です。`;
+  if (prev !== null && prev !== undefined) {
+    const delta = total - prev;
+    if (prev === 0 && total > 0) {
+      part += ` 前期間（同じ日数）はスキャンがなく、この期間から計測が始まっています。`;
+    } else if (prev > 0) {
+      const pct = Math.round((delta / prev) * 100);
+      part += ` 前期間は ${prev} 回（同じ日数）。前期比 ${delta >= 0 ? "+" : ""}${delta} 回（${pct >= 0 ? "+" : ""}${pct}%）。`;
+    } else if (prev === 0 && total === 0) {
+      part += ` 前期間もスキャンはありませんでした。`;
+    }
+  }
+  if (a.current_artwork?.title) {
+    part += ` 現在の展示作品は「${a.current_artwork.title}」です。`;
+  }
+  return part;
+}
+
+function artworkToCurrentDisplay(a: Artwork) {
+  const img =
+    a.main_image_url ||
+    a.images?.find((i) => i.is_main)?.image_url ||
+    a.images?.[0]?.image_url ||
+    "";
+  const start = a.published_at
+    ? new Date(a.published_at)
+    : new Date(a.created_at);
+  const days = Math.max(
+    0,
+    Math.floor((Date.now() - start.getTime()) / 86400000),
+  );
+  const { label, variant } = artworkStatusLabelJa(a.status);
+  return {
+    id: a.id,
+    title: a.title,
+    artist: a.artist?.name || "アーティスト",
+    image: img,
+    price: `¥${Number(a.price).toLocaleString("ja-JP")}`,
+    startDate: start.toLocaleDateString("ja-JP"),
+    days,
+    views: a.view_count ?? 0,
+    ctr: 0,
+    conversion: 0,
+    status: label,
+    statusVariant: variant as ArtworkStatusDisplayVariant,
   };
 }
 
@@ -135,7 +286,9 @@ const MOCK_SPACES_DATA: Record<string, any> = {
     image: "https://images.unsplash.com/photo-1497366754035-f200968a6e72?w=1200",
     images: ["https://images.unsplash.com/photo-1497366754035-f200968a6e72?w=1200"],
     totalRevenue: 95000,
-    totalSales: 6
+    totalSales: 6,
+    corporate_return_pending: false,
+    artist_recall_pending: false,
   },
   "2": {
     id: "2",
@@ -151,7 +304,9 @@ const MOCK_SPACES_DATA: Record<string, any> = {
     image: "https://images.unsplash.com/photo-1497366811353-6870744d04b2?w=1200",
     images: ["https://images.unsplash.com/photo-1497366811353-6870744d04b2?w=1200"],
     totalRevenue: 0,
-    totalSales: 0
+    totalSales: 0,
+    corporate_return_pending: false,
+    artist_recall_pending: false,
   }
 };
 
@@ -167,37 +322,10 @@ const MOCK_CURRENT_ARTWORKS: Record<string, any> = {
     views: 124,
     ctr: 28.2,
     conversion: 4.8,
-    status: "展示中"
+    status: "展示中",
+    statusVariant: "displaying" as const,
   }
 };
-
-const trendData = [
-  { week: "W1", views: 28, clicks: 8, sales: 1 },
-  { week: "W2", views: 42, clicks: 12, sales: 1 },
-  { week: "W3", views: 58, clicks: 16, sales: 2 },
-  { week: "W4", views: 72, clicks: 20, sales: 3 }
-];
-
-const exhibitionHistory = [
-  {
-    id: 1,
-    title: "春の庭",
-    artist: "佐々木 翔",
-    image: "https://images.unsplash.com/photo-1501854140801-50d01698950b?w=400",
-    period: "2024年4月1日 - 2024年6月30日",
-    sold: true,
-    revenue: 28000
-  },
-  {
-    id: 2,
-    title: "赤い景",
-    artist: "小林 麗子",
-    image: "https://images.unsplash.com/photo-1533158628620-7e35717d36e8?w=400",
-    period: "2024年1月10日 - 2024年3月31日",
-    sold: false,
-    revenue: 0
-  }
-];
 
 const notifications = [
   {
@@ -228,6 +356,7 @@ export function CorporateSpaceDetailPage() {
   const location = useLocation();
   const { spaceId } = useParams();
   const { currentUser } = useAuth();
+  const { canEdit } = useCorporateOrgRole();
   const [timePeriod, setTimePeriod] = useState("month");
   const historyRef = useRef<HTMLDivElement>(null);
   
@@ -236,7 +365,12 @@ export function CorporateSpaceDetailPage() {
   }, []);
   
   const [spaceData, setSpaceData] = useState<any>(MOCK_SPACES_DATA["1"]);
-  const [currentArtwork, setCurrentArtwork] = useState<any>(MOCK_CURRENT_ARTWORKS["1"]);
+  const [currentArtwork, setCurrentArtwork] = useState<any>(null);
+  /** Pipeline before on-wall display (pending / in_transit assignment). */
+  const [pendingExhibitionArtwork, setPendingExhibitionArtwork] = useState<any>(null);
+  const [confirmExhibitionLoading, setConfirmExhibitionLoading] = useState(false);
+  const [markReturnShippedLoading, setMarkReturnShippedLoading] = useState(false);
+  const [markRecallShippedLoading, setMarkRecallShippedLoading] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editedSpace, setEditedSpace] = useState<{
     name: string;
@@ -262,12 +396,226 @@ export function CorporateSpaceDetailPage() {
   const [qrMetaLoading, setQrMetaLoading] = useState(false);
   const [qrGenerating, setQrGenerating] = useState(false);
   const [qrDownloading, setQrDownloading] = useState(false);
+  const [manualArtworkDialogOpen, setManualArtworkDialogOpen] = useState(false);
+  const [exhibitionHistoryItems, setExhibitionHistoryItems] = useState<
+    SpaceArtworkHistoryItem[]
+  >([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [reDisplayTarget, setReDisplayTarget] =
+    useState<SpaceArtworkHistoryItem | null>(null);
+  const [reDisplaySubmitting, setReDisplaySubmitting] = useState(false);
+  const [qrAnalytics, setQrAnalytics] = useState<QrAnalyticsResponse | null>(null);
+  const [qrAnalyticsLoading, setQrAnalyticsLoading] = useState(false);
+  const [qrAnalyticsError, setQrAnalyticsError] = useState<string | null>(null);
 
-  const canManageSpaceQr =
+  const loadExhibitionHistory = useCallback(async () => {
+    if (
+      !spaceId ||
+      !isUuidString(spaceId) ||
+      !localStorage.getItem("mgj_access_token")
+    ) {
+      setExhibitionHistoryItems([]);
+      return;
+    }
+    setHistoryLoading(true);
+    try {
+      const res = await getSpaceArtworkHistory(spaceId);
+      setExhibitionHistoryItems(res.assignments ?? []);
+    } catch (e) {
+      console.warn("getSpaceArtworkHistory failed", e);
+      setExhibitionHistoryItems([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [spaceId]);
+
+  useEffect(() => {
+    if (!spaceId || !isUuidString(spaceId)) {
+      setQrAnalytics(null);
+      setQrAnalyticsError(null);
+      return;
+    }
+    if (
+      typeof window === "undefined" ||
+      !localStorage.getItem("mgj_access_token")
+    ) {
+      setQrAnalytics(null);
+      setQrAnalyticsError(null);
+      return;
+    }
+    const qrId = spaceData?.qr_code_id as string | null | undefined;
+    if (!qrId) {
+      setQrAnalytics(null);
+      setQrAnalyticsError(null);
+      return;
+    }
+    const period = timePeriod as QrAnalyticsUiPeriod;
+    if (period !== "week" && period !== "month" && period !== "quarter") {
+      return;
+    }
+    let cancelled = false;
+    setQrAnalyticsLoading(true);
+    setQrAnalyticsError(null);
+    getQrAnalytics(qrId, period)
+      .then((data) => {
+        if (!cancelled) setQrAnalytics(data);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setQrAnalytics(null);
+          setQrAnalyticsError(
+            e instanceof Error ? e.message : "取得に失敗しました",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setQrAnalyticsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [spaceId, spaceData?.qr_code_id, timePeriod]);
+
+  const qrChartRows = useMemo(
+    () => qrAnalyticsChartRows(qrAnalytics?.scans_by_day),
+    [qrAnalytics],
+  );
+
+  const loggedInUuidSpace =
     Boolean(spaceId && isUuidString(spaceId)) &&
     Boolean(
       typeof window !== "undefined" && localStorage.getItem("mgj_access_token"),
     );
+
+  /** View QR metadata / download — any corporate role. */
+  const canManageSpaceQr = loggedInUuidSpace;
+  /** Mutations: spaces, QR issue, assignments, reports — editor+ */
+  const canEditSpace = loggedInUuidSpace && canEdit;
+  const canAssignArtwork = canEditSpace;
+
+  /**
+   * このスペースに展示依頼〜受領前までの作品がある間は、新たな展示依頼（手動/AI）不可。
+   * API の pending_* があれば必ずブロック（status 文字列だけに依存しない）。
+   */
+  const hasActiveExhibitionPipeline = Boolean(
+    spaceData?.pending_exhibition_artwork_id ||
+      spaceData?.pending_exhibition_assignment_id ||
+      spaceData?.pending_exhibition_status === "pending" ||
+      spaceData?.pending_exhibition_status === "approved" ||
+      spaceData?.pending_exhibition_status === "in_transit",
+  );
+
+  /** 展示中・依頼パイプライン・返却/回収手続きなど、スペースに作品が関わっている間は手動/AI 選択不可 */
+  const spaceHasArtworkInvolvement = Boolean(
+    spaceData?.current_artwork_id ||
+      hasActiveExhibitionPipeline ||
+      spaceData?.corporate_return_pending ||
+      spaceData?.artist_recall_pending ||
+      spaceData?.artist_recall_awaiting_artist_confirm ||
+      (Boolean(spaceData?.active_return_request_id) &&
+        spaceData?.active_return_request_status !== "completed" &&
+        spaceData?.active_return_request_status !== "rejected"),
+  );
+
+  const canRequestNewExhibition =
+    canAssignArtwork && !spaceHasArtworkInvolvement;
+
+  const artworkSelectionBlockedTitle =
+    "このスペースに作品が割り当てられているか、展示・返送・回収の手続きが進行中のときは利用できません。";
+
+  /** 返却申請・不具合報告は「展示中」（スペースに設置済み）のときのみ */
+  const canUseExhibitedArtworkActions = useMemo(() => {
+    const wid = spaceData?.current_artwork_id;
+    if (!wid || !currentArtwork) return false;
+    if (loggedInUuidSpace) {
+      if (historyLoading) return false;
+      const row = exhibitionHistoryItems.find(
+        (it) => String(it.artwork_id) === String(wid),
+      );
+      if (row) return row.assignment_status === "displaying";
+      if (exhibitionHistoryItems.length === 0 && !hasActiveExhibitionPipeline) {
+        return true;
+      }
+      return false;
+    }
+    return (
+      currentArtwork.statusVariant === "displaying" ||
+      currentArtwork.status === "展示中"
+    );
+  }, [
+    spaceData?.current_artwork_id,
+    currentArtwork,
+    loggedInUuidSpace,
+    historyLoading,
+    exhibitionHistoryItems,
+    hasActiveExhibitionPipeline,
+  ]);
+
+  const exhibitedArtworkActionsDisabledTitle =
+    "展示中（スペースに設置済み）の作品があるときのみ利用できます";
+
+  const reloadSpaceAndDisplayedArtwork = useCallback(async () => {
+    if (
+      !spaceId ||
+      !isUuidString(spaceId) ||
+      !localStorage.getItem("mgj_access_token")
+    ) {
+      return;
+    }
+    try {
+      const s = await getSpace(spaceId);
+      setSpaceData(mapSpaceResponseToDetailData(s));
+      if (s.pending_exhibition_artwork_id) {
+        try {
+          const pa = await artworkService.getArtwork(s.pending_exhibition_artwork_id);
+          setPendingExhibitionArtwork(artworkToCurrentDisplay(pa));
+        } catch {
+          setPendingExhibitionArtwork(null);
+        }
+      } else {
+        setPendingExhibitionArtwork(null);
+      }
+      if (s.current_artwork_id) {
+        try {
+          const a = await artworkService.getArtwork(s.current_artwork_id);
+          setCurrentArtwork(artworkToCurrentDisplay(a));
+        } catch {
+          setCurrentArtwork(null);
+        }
+      } else {
+        setCurrentArtwork(null);
+      }
+      await loadExhibitionHistory();
+    } catch (e) {
+      console.error(e);
+    }
+  }, [spaceId, loadExhibitionHistory]);
+
+  /** Poll while exhibition is pending artist ship or in transit — mirrors artist/corporate actions without WebSockets. */
+  useRefreshOnInterval(
+    () => {
+      void reloadSpaceAndDisplayedArtwork();
+    },
+    Boolean(
+      loggedInUuidSpace &&
+        !isLoadingSpaceDetail &&
+        (spaceData?.pending_exhibition_artwork_id ||
+          spaceData?.pending_exhibition_assignment_id ||
+          spaceData?.pending_exhibition_status === "pending" ||
+          spaceData?.pending_exhibition_status === "approved" ||
+          spaceData?.pending_exhibition_status === "in_transit" ||
+          spaceData?.artist_recall_pending ||
+          spaceData?.artist_recall_awaiting_artist_confirm),
+    ),
+    45_000,
+  );
+
+  /** 作品が関与する状態になったら手動選択ダイアログを閉じる */
+  useEffect(() => {
+    if (spaceHasArtworkInvolvement && manualArtworkDialogOpen) {
+      setManualArtworkDialogOpen(false);
+    }
+  }, [spaceHasArtworkInvolvement, manualArtworkDialogOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -288,13 +636,35 @@ export function CorporateSpaceDetailPage() {
           const s = await getSpace(spaceId);
           if (cancelled) return;
           setSpaceData(mapSpaceResponseToDetailData(s));
-          setCurrentArtwork(null);
-          setIsLoadingSpaceDetail(false);
+          if (s.pending_exhibition_artwork_id) {
+            try {
+              const pa = await artworkService.getArtwork(s.pending_exhibition_artwork_id);
+              if (!cancelled) setPendingExhibitionArtwork(artworkToCurrentDisplay(pa));
+            } catch {
+              if (!cancelled) setPendingExhibitionArtwork(null);
+            }
+          } else {
+            if (!cancelled) setPendingExhibitionArtwork(null);
+          }
+          if (s.current_artwork_id) {
+            try {
+              const a = await artworkService.getArtwork(s.current_artwork_id);
+              if (!cancelled) setCurrentArtwork(artworkToCurrentDisplay(a));
+            } catch {
+              if (!cancelled) setCurrentArtwork(null);
+            }
+          } else {
+            if (!cancelled) setCurrentArtwork(null);
+          }
+          if (!cancelled) await loadExhibitionHistory();
+          if (!cancelled) setIsLoadingSpaceDetail(false);
           return;
         } catch (e) {
           console.warn("getSpace failed, falling back to cache", e);
         }
       }
+
+      if (!cancelled) setExhibitionHistoryItems([]);
 
       if (cancelled) return;
 
@@ -354,6 +724,7 @@ export function CorporateSpaceDetailPage() {
             ctr: 0,
             conversion: 0,
             status: "展示中",
+            statusVariant: "displaying" as const,
           };
         }
       }
@@ -432,7 +803,7 @@ export function CorporateSpaceDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [spaceId, location.state, currentUser]);
+  }, [spaceId, location.state, location.key, currentUser, loadExhibitionHistory]);
 
   useEffect(() => {
     if (!canManageSpaceQr || isLoadingSpaceDetail || !spaceId) {
@@ -461,8 +832,36 @@ export function CorporateSpaceDetailPage() {
     };
   }, [spaceId, canManageSpaceQr, isLoadingSpaceDetail]);
 
+  // Refresh 累計スキャン when returning to this tab after a test scan
+  useEffect(() => {
+    if (!canManageSpaceQr || !spaceId || !isUuidString(spaceId)) return;
+
+    const refreshQrMeta = () => {
+      if (document.visibilityState !== "visible") return;
+      void (async () => {
+        try {
+          const qr = await getSpaceQRCode(spaceId);
+          setSpaceQrInfo(qr);
+        } catch {
+          /* keep previous */
+        }
+      })();
+    };
+
+    document.addEventListener("visibilitychange", refreshQrMeta);
+    window.addEventListener("focus", refreshQrMeta);
+    return () => {
+      document.removeEventListener("visibilitychange", refreshQrMeta);
+      window.removeEventListener("focus", refreshQrMeta);
+    };
+  }, [canManageSpaceQr, spaceId]);
+
   const handleGenerateSpaceQr = useCallback(async () => {
     if (!spaceId || !isUuidString(spaceId)) return;
+    if (!canEdit) {
+      toast.error("この操作には編集者以上の権限が必要です。");
+      return;
+    }
     setQrGenerating(true);
     try {
       const qr = await generateSpaceQRCode(spaceId);
@@ -474,7 +873,7 @@ export function CorporateSpaceDetailPage() {
     } finally {
       setQrGenerating(false);
     }
-  }, [spaceId]);
+  }, [spaceId, canEdit]);
 
   const handleDownloadSpaceQr = useCallback(async () => {
     if (!spaceId || !isUuidString(spaceId)) return;
@@ -500,7 +899,43 @@ export function CorporateSpaceDetailPage() {
     historyRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
+  const handleConfirmReDisplay = useCallback(async () => {
+    if (!spaceId || !isUuidString(spaceId) || !reDisplayTarget?.artwork_id) {
+      return;
+    }
+    if (!canEdit) {
+      toast.error("この操作には編集者以上の権限が必要です。");
+      return;
+    }
+    setReDisplaySubmitting(true);
+    try {
+      const res = await assignSpaceArtwork(spaceId, {
+        artwork_id: reDisplayTarget.artwork_id,
+        assignment_reason: "展示履歴から再展示",
+      });
+      toast.success(res.message || "展示依頼を送信しました");
+      setReDisplayTarget(null);
+      await reloadSpaceAndDisplayedArtwork();
+    } catch (e) {
+      const msg =
+        e instanceof Error ? e.message : "再展示に失敗しました";
+      toast.error(msg);
+    } finally {
+      setReDisplaySubmitting(false);
+    }
+  }, [spaceId, reDisplayTarget, reloadSpaceAndDisplayedArtwork, canEdit]);
+
   const handleAIProposal = () => {
+    if (!canEdit) {
+      toast.error("この操作には編集者以上の権限が必要です。");
+      return;
+    }
+    if (spaceHasArtworkInvolvement) {
+      toast.error(
+        "このスペースに作品が割り当てられているか、展示・返送・回収の手続きが進行中です。完了してから作品を選び直してください。",
+      );
+      return;
+    }
     if (!artworkPlacementArea) {
       toast.error("作品を飾る位置を指定してください");
       setAreaSelectionDialogOpen(true);
@@ -519,6 +954,71 @@ export function CorporateSpaceDetailPage() {
     
     navigate(`/ai-artwork-preview?${params.toString()}`);
   };
+
+  const handleConfirmExhibition = async () => {
+    if (!canEdit) {
+      toast.error("この操作には編集者以上の権限が必要です。");
+      return;
+    }
+    const sid = spaceData?.id ?? spaceId;
+    const assignmentId = spaceData?.pending_exhibition_assignment_id;
+    if (!sid || !assignmentId) return;
+    setConfirmExhibitionLoading(true);
+    try {
+      await confirmExhibitionDisplay(String(sid), String(assignmentId));
+      toast.success("展示を開始しました");
+      await reloadSpaceAndDisplayedArtwork();
+    } catch (e) {
+      const msg =
+        e instanceof Error ? e.message : "展示開始の確認に失敗しました";
+      toast.error(msg);
+    } finally {
+      setConfirmExhibitionLoading(false);
+    }
+  };
+
+  const handleMarkReturnShipped = useCallback(async () => {
+    if (!spaceId || !isUuidString(spaceId)) return;
+    if (!canEdit) {
+      toast.error("この操作には編集者以上の権限が必要です。");
+      return;
+    }
+    setMarkReturnShippedLoading(true);
+    try {
+      const res = await markReturnRequestShipped(spaceId, {
+        return_request_id: spaceData.active_return_request_id ?? undefined,
+      });
+      toast.success(res.message || "返送発送済みとして登録しました");
+      await reloadSpaceAndDisplayedArtwork();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "登録に失敗しました");
+    } finally {
+      setMarkReturnShippedLoading(false);
+    }
+  }, [
+    spaceId,
+    canEdit,
+    spaceData.active_return_request_id,
+    reloadSpaceAndDisplayedArtwork,
+  ]);
+
+  const handleMarkRecallShipped = useCallback(async () => {
+    if (!spaceId || !isUuidString(spaceId)) return;
+    if (!canEdit) {
+      toast.error("この操作には編集者以上の権限が必要です。");
+      return;
+    }
+    setMarkRecallShippedLoading(true);
+    try {
+      const res = await markRecallShipped(spaceId);
+      toast.success(res.message || "回収向け発送済みとして登録しました");
+      await reloadSpaceAndDisplayedArtwork();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "登録に失敗しました");
+    } finally {
+      setMarkRecallShippedLoading(false);
+    }
+  }, [spaceId, canEdit, reloadSpaceAndDisplayedArtwork]);
 
   const handleAreaSave = (area: { x: number; y: number; width: number; height: number }) => {
     setArtworkPlacementArea(area);
@@ -543,6 +1043,10 @@ export function CorporateSpaceDetailPage() {
   };
 
   const handleSaveEdit = async () => {
+    if (!canEdit) {
+      toast.error("この操作には編集者以上の権限が必要です。");
+      return;
+    }
     const name = editedSpace.name.trim();
     const address = editedSpace.address.trim();
     if (!name) {
@@ -595,6 +1099,10 @@ export function CorporateSpaceDetailPage() {
   };
 
   const handleDeleteSpace = async () => {
+    if (!canEdit) {
+      toast.error("この操作には編集者以上の権限が必要です。");
+      return;
+    }
     const idStr = String(spaceId ?? spaceData?.id ?? "");
     if (!idStr) {
       toast.error("スペースIDが取得できません");
@@ -666,6 +1174,38 @@ export function CorporateSpaceDetailPage() {
 
       {/* メインコンテンツ */}
       <div className="container mx-auto px-4 sm:px-6 py-4">
+        {(spaceData.corporate_return_pending || spaceData.artist_recall_pending) && (
+          <div className="mb-4 space-y-2">
+            {spaceData.corporate_return_pending && (
+              <div
+                className="flex flex-wrap items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+                role="status"
+              >
+                <Truck className="w-5 h-5 shrink-0 text-amber-700 mt-0.5" aria-hidden />
+                <div>
+                  <p className="font-semibold">返却申請が進行中です</p>
+                  <p className="text-xs text-amber-900/90 mt-1">
+                    このスペースの展示作品について、返送手続きが進んでいます。梱包・発送の準備を進めてください。
+                  </p>
+                </div>
+              </div>
+            )}
+            {spaceData.artist_recall_pending && (
+              <div
+                className="flex flex-wrap items-start gap-3 rounded-lg border border-blue-300 bg-blue-50 px-4 py-3 text-sm text-blue-950"
+                role="status"
+              >
+                <Package className="w-5 h-5 shrink-0 text-blue-700 mt-0.5" aria-hidden />
+                <div>
+                  <p className="font-semibold">アーティストが回収を依頼しています</p>
+                  <p className="text-xs text-blue-900/90 mt-1">
+                    作品の返送・返却対応が必要です。ご連絡までにご対応ください。
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 sm:gap-6">
           {/* メインエリア */}
           <div className="lg:col-span-3 space-y-4 sm:space-y-6">
@@ -687,26 +1227,28 @@ export function CorporateSpaceDetailPage() {
                         {spaceData.facilityOverview || spaceData.type} • {spaceData.location}
                       </CardDescription>
                     </div>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleEditSpace}
-                        className="gap-2"
-                      >
-                        <Edit className="w-3 h-3 sm:w-4 sm:h-4" />
-                        <span className="text-xs sm:text-sm">編集</span>
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setDeleteDialogOpen(true)}
-                        className="gap-2 text-red-600 hover:text-red-700 hover:bg-red-50"
-                      >
-                        <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
-                        <span className="text-xs sm:text-sm">削除</span>
-                      </Button>
-                    </div>
+                    {canEditSpace ? (
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleEditSpace}
+                          className="gap-2"
+                        >
+                          <Edit className="w-3 h-3 sm:w-4 sm:h-4" />
+                          <span className="text-xs sm:text-sm">編集</span>
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setDeleteDialogOpen(true)}
+                          className="gap-2 text-red-600 hover:text-red-700 hover:bg-red-50"
+                        >
+                          <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
+                          <span className="text-xs sm:text-sm">削除</span>
+                        </Button>
+                      </div>
+                    ) : null}
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -759,15 +1301,17 @@ export function CorporateSpaceDetailPage() {
                         </div>
 
                         {/* 作品エリア指定ボタン */}
-                        <Button
-                          onClick={() => setAreaSelectionDialogOpen(true)}
-                          className="absolute bottom-4 left-4 bg-white/90 hover:bg-white text-gray-800 backdrop-blur-sm shadow-lg gap-2 text-xs sm:text-sm"
-                          size="sm"
-                        >
-                          <Frame className="w-3 h-3 sm:w-4 sm:h-4" />
-                          <span className="hidden sm:inline">{artworkPlacementArea ? "配置エリアを変更" : "作品を展示するエリアを指定"}</span>
-                          <span className="sm:hidden">エリア指定</span>
-                        </Button>
+                        {canEditSpace ? (
+                          <Button
+                            onClick={() => setAreaSelectionDialogOpen(true)}
+                            className="absolute bottom-4 left-4 bg-white/90 hover:bg-white text-gray-800 backdrop-blur-sm shadow-lg gap-2 text-xs sm:text-sm"
+                            size="sm"
+                          >
+                            <Frame className="w-3 h-3 sm:w-4 sm:h-4" />
+                            <span className="hidden sm:inline">{artworkPlacementArea ? "配置エリアを変更" : "作品を展示するエリアを指定"}</span>
+                            <span className="sm:hidden">エリア指定</span>
+                          </Button>
+                        ) : null}
                         
                         {/* ナビゲーションボタン */}
                         {spaceData.images.length > 1 && (
@@ -887,7 +1431,7 @@ export function CorporateSpaceDetailPage() {
                     <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
                       スペース登録後、ここからQRを発行できます。高解像度画像を印刷して設置すると、来場者は現在展示中の作品ページへ誘導されます（作品を入れ替えても同じQRのままです）。
                     </p>
-                    {!canManageSpaceQr ? (
+                    {!loggedInUuidSpace ? (
                       <p className="text-xs text-muted-foreground">
                         ログイン済みの登録スペースでのみQRコードを発行・表示できます。
                       </p>
@@ -906,12 +1450,20 @@ export function CorporateSpaceDetailPage() {
                           />
                         </div>
                         <div className="space-y-3 flex-1 w-full min-w-0">
-                          <p className="text-xs sm:text-sm text-muted-foreground">
-                            累計スキャン回数:{" "}
-                            <span className="font-medium text-foreground tabular-nums">
-                              {spaceQrInfo.total_scans}
-                            </span>
-                          </p>
+                          <div className="space-y-1">
+                            <p className="text-xs sm:text-sm text-muted-foreground">
+                              <span className="font-medium text-foreground">
+                                スペースQRの累計スキャン
+                              </span>
+                              ：{" "}
+                              <span className="font-medium text-foreground tabular-nums">
+                                {spaceQrInfo.total_scans}
+                              </span>
+                            </p>
+                            <p className="text-[10px] sm:text-xs text-muted-foreground leading-snug">
+                              このQRを読み取って遷移した回数のみ（作品ページの全閲覧数とは別です）
+                            </p>
+                          </div>
                           <Button
                             type="button"
                             variant="outline"
@@ -929,7 +1481,7 @@ export function CorporateSpaceDetailPage() {
                           </Button>
                         </div>
                       </div>
-                    ) : (
+                    ) : canEditSpace ? (
                       <Button
                         type="button"
                         className="bg-gradient-to-r from-primary to-accent hover:opacity-90 gap-2"
@@ -948,6 +1500,10 @@ export function CorporateSpaceDetailPage() {
                           </>
                         )}
                       </Button>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        QRコードの発行は編集者以上の権限が必要です。閲覧者はダウンロードのみ（発行済みの場合）が可能です。
+                      </p>
                     )}
                   </div>
 
@@ -984,22 +1540,266 @@ export function CorporateSpaceDetailPage() {
                         repeatType: "loop"
                       }}
                     >
-                      <Button 
-                        className={`w-full bg-gradient-to-r from-accent to-purple-500 hover:from-accent/90 hover:to-purple-600 text-white h-10 sm:h-12 shadow-lg hover:shadow-xl transition-all text-sm sm:text-base ${
-                          isAreaJustSaved ? 'ring-4 ring-accent/50 ring-offset-2' : ''
-                        }`}
-                        onClick={handleAIProposal}
-                      >
-                        <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
-                        AIに作品を提案させる
-                      </Button>
+                      {canEditSpace ? (
+                        <Button 
+                          disabled={!canRequestNewExhibition}
+                          title={
+                            !canRequestNewExhibition
+                              ? artworkSelectionBlockedTitle
+                              : undefined
+                          }
+                          className={`w-full bg-gradient-to-r from-accent to-purple-500 hover:from-accent/90 hover:to-purple-600 text-white h-10 sm:h-12 shadow-lg hover:shadow-xl transition-all text-sm sm:text-base disabled:opacity-50 ${
+                            isAreaJustSaved ? 'ring-4 ring-accent/50 ring-offset-2' : ''
+                          }`}
+                          onClick={handleAIProposal}
+                        >
+                          <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
+                          AIに作品を提案させる
+                        </Button>
+                      ) : null}
                     </motion.div>
                   </div>
                 </CardContent>
               </Card>
             </motion.div>
 
-            {/* セクション②：現在展示中の作品 */}
+            {pendingExhibitionArtwork &&
+              spaceData.pending_exhibition_status &&
+              (spaceData.pending_exhibition_status === "pending" ||
+                spaceData.pending_exhibition_status === "approved" ||
+                spaceData.pending_exhibition_status === "in_transit") && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.05 }}
+                className="mb-6"
+              >
+                <Card className="border-amber-200 bg-amber-50/60">
+                  <CardHeader>
+                    <CardTitle className="text-lg sm:text-xl">展示の準備中</CardTitle>
+                    <CardDescription className="text-xs sm:text-sm">
+                      {spaceData.pending_exhibition_status === "pending"
+                        ? "展示依頼を送信済みです。アーティストの発送をお待ちください。"
+                        : spaceData.pending_exhibition_status === "approved"
+                          ? "展示依頼が承認されました。次の手続きに進みます。"
+                          : "作品が発送されました。受領後に展示開始を確認してください。"}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="flex flex-col sm:flex-row gap-4 p-4 rounded-lg border bg-white/80">
+                      <div className="w-full sm:w-28 h-40 sm:h-28 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100 mx-auto sm:mx-0">
+                        <ImageWithFallback
+                          src={pendingExhibitionArtwork.image}
+                          alt={pendingExhibitionArtwork.title}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div className="flex-grow min-w-0 space-y-2">
+                        <h3 className="text-base font-medium text-primary">
+                          {pendingExhibitionArtwork.title}
+                        </h3>
+                        <p className="text-xs text-gray-600">{pendingExhibitionArtwork.artist}</p>
+                        <Badge variant="outline" className="w-fit border-amber-300 text-amber-900">
+                          {assignmentStatusLabel(spaceData.pending_exhibition_status)}
+                        </Badge>
+                      </div>
+                    </div>
+                    {spaceData.pending_exhibition_status === "in_transit" &&
+                      canEdit &&
+                      spaceData.pending_exhibition_has_outbound_shipment && (
+                      <Button
+                        type="button"
+                        className="w-full sm:w-auto bg-primary hover:bg-primary/90"
+                        disabled={confirmExhibitionLoading}
+                        onClick={() => void handleConfirmExhibition()}
+                      >
+                        {confirmExhibitionLoading ? (
+                          <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                        ) : (
+                          <Package className="w-4 h-4 mr-2" />
+                        )}
+                        受領済み — 展示を開始する
+                      </Button>
+                    )}
+                    {spaceData.pending_exhibition_status === "in_transit" &&
+                      canEdit &&
+                      !spaceData.pending_exhibition_has_outbound_shipment && (
+                      <p className="text-xs text-amber-900/90">
+                        発送レコード（モック含む）がまだありません。アーティストが「発送済み」を登録してから受領・展示開始ができます。
+                      </p>
+                    )}
+                    {spaceData.pending_exhibition_status === "pending" && (
+                      <p className="text-xs text-amber-900/90">
+                        この作品はまだ「展示中」としてカウントされません。発送・受領確認後に表示されます。
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              </motion.div>
+            )}
+
+            {spaceData.active_return_request_id &&
+              (spaceData.active_return_request_status === "pending" ||
+                spaceData.active_return_request_status === "approved") &&
+              currentArtwork && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, delay: 0.06 }}
+                  className="mb-6"
+                >
+                  <Card className="border-rose-200 bg-rose-50/70">
+                    <CardHeader>
+                      <CardTitle className="text-lg sm:text-xl">
+                        返却 — 作品をアーティストへ発送
+                      </CardTitle>
+                      <CardDescription className="text-xs sm:text-sm">
+                        返却申請が有効です。実際に発送したら「発送済みにする」を押してください。アーティストが受領確認後、手続きが完了します。
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="flex flex-col sm:flex-row gap-4 p-4 rounded-lg border border-rose-200/80 bg-white/90">
+                        <div className="w-full sm:w-28 h-40 sm:h-28 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100 mx-auto sm:mx-0">
+                          <ImageWithFallback
+                            src={currentArtwork.image}
+                            alt={currentArtwork.title}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                        <div className="flex-grow min-w-0 space-y-2">
+                          <h3 className="text-base font-medium text-primary">
+                            {currentArtwork.title}
+                          </h3>
+                          <p className="text-xs text-gray-600">{currentArtwork.artist}</p>
+                          <Badge
+                            variant="outline"
+                            className="w-fit border-rose-300 text-rose-900"
+                          >
+                            {assignmentStatusLabel(
+                              spaceData.active_return_request_status || "pending",
+                            )}
+                          </Badge>
+                        </div>
+                      </div>
+                      {canEdit ? (
+                        <Button
+                          type="button"
+                          className="w-full sm:w-auto bg-rose-700 hover:bg-rose-800 text-white"
+                          disabled={markReturnShippedLoading}
+                          onClick={() => void handleMarkReturnShipped()}
+                        >
+                          {markReturnShippedLoading ? (
+                            <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                          ) : (
+                            <Truck className="w-4 h-4 mr-2" />
+                          )}
+                          返送を発送済みにする
+                        </Button>
+                      ) : null}
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              )}
+
+            {spaceData.active_return_request_status === "in_transit" && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.06 }}
+                className="mb-6"
+              >
+                <Card className="border-amber-200 bg-amber-50/60">
+                  <CardHeader>
+                    <CardTitle className="text-lg sm:text-xl">
+                      返却 — アーティスト受領待ち
+                    </CardTitle>
+                    <CardDescription className="text-xs sm:text-sm">
+                      返送を発送済みとして登録しました。アーティストが作品を受領・確認するまでお待ちください。
+                    </CardDescription>
+                  </CardHeader>
+                </Card>
+              </motion.div>
+            )}
+
+            {spaceData.artist_recall_pending && currentArtwork && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.06 }}
+                className="mb-6"
+              >
+                <Card className="border-blue-200 bg-blue-50/80">
+                  <CardHeader>
+                    <CardTitle className="text-lg sm:text-xl">
+                      回収依頼 — 作品をアーティストへ発送
+                    </CardTitle>
+                    <CardDescription className="text-xs sm:text-sm">
+                      アーティストが回収を依頼しています。実際に発送したら「回収向け発送済みにする」を押してください。アーティストが受領確認後、手続きが完了します。
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="flex flex-col sm:flex-row gap-4 p-4 rounded-lg border border-blue-200/80 bg-white/90">
+                      <div className="w-full sm:w-28 h-40 sm:h-28 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100 mx-auto sm:mx-0">
+                        <ImageWithFallback
+                          src={currentArtwork.image}
+                          alt={currentArtwork.title}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div className="flex-grow min-w-0 space-y-2">
+                        <h3 className="text-base font-medium text-primary">
+                          {currentArtwork.title}
+                        </h3>
+                        <p className="text-xs text-gray-600">{currentArtwork.artist}</p>
+                        <Badge
+                          variant="outline"
+                          className="w-fit border-blue-400 text-blue-950"
+                        >
+                          回収依頼中
+                        </Badge>
+                      </div>
+                    </div>
+                    {canEdit ? (
+                      <Button
+                        type="button"
+                        className="w-full sm:w-auto bg-blue-800 hover:bg-blue-900 text-white"
+                        disabled={markRecallShippedLoading}
+                        onClick={() => void handleMarkRecallShipped()}
+                      >
+                        {markRecallShippedLoading ? (
+                          <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                        ) : (
+                          <Truck className="w-4 h-4 mr-2" />
+                        )}
+                        回収向け発送済みにする
+                      </Button>
+                    ) : null}
+                  </CardContent>
+                </Card>
+              </motion.div>
+            )}
+
+            {spaceData.artist_recall_awaiting_artist_confirm && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.06 }}
+                className="mb-6"
+              >
+                <Card className="border-sky-200 bg-sky-50/70">
+                  <CardHeader>
+                    <CardTitle className="text-lg sm:text-xl">
+                      回収 — アーティスト受領待ち
+                    </CardTitle>
+                    <CardDescription className="text-xs sm:text-sm">
+                      回収向け返送を発送済みとして登録しました。アーティストが作品を受領・確認するまでお待ちください。
+                    </CardDescription>
+                  </CardHeader>
+                </Card>
+              </motion.div>
+            )}
+
+            {/* セクション②：現在の展示作品（返送手続き中はステータスで表示） */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -1009,8 +1809,12 @@ export function CorporateSpaceDetailPage() {
                 <CardHeader>
                   <div className="flex items-center justify-between flex-col sm:flex-row gap-3 sm:gap-0">
                     <div>
-                      <CardTitle className="text-lg sm:text-xl">展示中の作品</CardTitle>
-                      <CardDescription className="text-xs sm:text-sm">品のパフォーマンスデータ</CardDescription>
+                      <CardTitle className="text-lg sm:text-xl">現在の作品</CardTitle>
+                      <CardDescription className="text-xs sm:text-sm">
+                        {currentArtwork?.statusVariant === "in_transit"
+                          ? "返送手続き中の作品です（法人からの発送後、受領確認まで）。"
+                          : "作品のパフォーマンスデータ"}
+                      </CardDescription>
                     </div>
                     <Button variant="outline" size="sm" onClick={scrollToHistory} className="w-full sm:w-auto">
                       <span className="text-xs sm:text-sm">展示履歴を見る</span>
@@ -1024,64 +1828,133 @@ export function CorporateSpaceDetailPage() {
                       initial={{ opacity: 0, x: -20 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ duration: 0.5, delay: 0.2 }}
-                      className="flex flex-col sm:flex-row gap-4 p-4 rounded-lg border hover:shadow-lg transition-all"
+                      className="space-y-4"
                     >
-                      <div className="w-full sm:w-32 h-48 sm:h-32 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100 mx-auto sm:mx-0">
-                        <ImageWithFallback
-                          src={currentArtwork.image}
-                          alt={currentArtwork.title}
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-                      <div className="flex-grow">
-                        <div className="flex items-start justify-between mb-3 flex-col sm:flex-row gap-2 sm:gap-0">
-                          <div>
-                            <h3 className="text-base sm:text-lg text-primary mb-1">{currentArtwork.title}</h3>
-                            <p className="text-xs sm:text-sm text-gray-600 flex items-center gap-2 mb-1">
-                              <Users className="w-3 h-3" />
-                              {currentArtwork.artist}
-                            </p>
-                            <p className="text-xs text-gray-500">
-                              展示開始：{currentArtwork.startDate} （{currentArtwork.days}日経過）
-                            </p>
-                            <p className="text-sm sm:text-base text-accent mt-1">{currentArtwork.price}</p>
-                          </div>
-                          <Badge className="bg-green-100 text-green-700 border-green-200 w-fit">
-                            {currentArtwork.status}
-                          </Badge>
+                      <div className="flex flex-col sm:flex-row gap-4 p-4 rounded-lg border hover:shadow-lg transition-all">
+                        <div className="w-full sm:w-32 h-48 sm:h-32 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100 mx-auto sm:mx-0">
+                          <ImageWithFallback
+                            src={currentArtwork.image}
+                            alt={currentArtwork.title}
+                            className="w-full h-full object-cover"
+                          />
                         </div>
-                        <div className="flex justify-center">
-                          <div className="text-center p-3 bg-blue-50 rounded-lg min-w-[120px]">
-                            <div className="flex items-center justify-center gap-1 text-blue-600 mb-1">
-                              <Eye className="w-3 h-3 sm:w-4 sm:h-4" />
-                              <span className="text-xs">QR閲覧数</span>
+                        <div className="flex-grow min-w-0 flex flex-col">
+                          <div className="flex items-start justify-between mb-3 flex-col sm:flex-row gap-2 sm:gap-3">
+                            <div className="min-w-0">
+                              <h3 className="text-base sm:text-lg text-primary mb-1">{currentArtwork.title}</h3>
+                              <p className="text-xs sm:text-sm text-gray-600 flex items-center gap-2 mb-1">
+                                <Users className="w-3 h-3 shrink-0" />
+                                {currentArtwork.artist}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                展示開始：{currentArtwork.startDate} （{currentArtwork.days}日経過）
+                              </p>
+                              <p className="text-sm sm:text-base text-accent mt-1">{currentArtwork.price}</p>
                             </div>
-                            <p className="text-xl sm:text-2xl text-blue-700">{currentArtwork.views}</p>
+                            <Badge
+                              className={`w-fit shrink-0 border ${badgeClassForArtworkStatusVariant(
+                                currentArtwork.statusVariant ?? "displaying",
+                              )}`}
+                            >
+                              {currentArtwork.status}
+                            </Badge>
                           </div>
                         </div>
-                        <div className="mt-3">
-                          <Button 
-                            size="sm" 
-                            className="w-full bg-gradient-to-r from-accent to-purple-500 hover:from-accent/90 hover:to-purple-600 text-white text-xs sm:text-sm"
+                      </div>
+
+                      <div
+                        className={
+                          canAssignArtwork || canEditSpace
+                            ? "grid w-full max-w-2xl mx-auto grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-2.5 sm:items-stretch"
+                            : "grid w-full max-w-2xl mx-auto grid-cols-1 gap-2"
+                        }
+                      >
+                        {canAssignArtwork && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={!canRequestNewExhibition}
+                            title={
+                              !canRequestNewExhibition
+                                ? artworkSelectionBlockedTitle
+                                : undefined
+                            }
+                            className="w-full h-9 sm:h-9 justify-center text-[11px] sm:text-xs px-3 border-gray-200 bg-gray-50/80 hover:bg-gray-100 disabled:opacity-50"
+                            onClick={() => {
+                              if (!canRequestNewExhibition) return;
+                              setManualArtworkDialogOpen(true);
+                            }}
+                          >
+                            手動で作品を選ぶ
+                          </Button>
+                        )}
+                        {canEditSpace && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={!canRequestNewExhibition}
+                            title={
+                              !canRequestNewExhibition
+                                ? artworkSelectionBlockedTitle
+                                : undefined
+                            }
+                            className="w-full h-9 sm:h-9 justify-center text-[11px] sm:text-xs px-3 bg-gradient-to-r from-accent to-purple-500 hover:from-accent/90 hover:to-purple-600 text-white disabled:opacity-50"
                             onClick={handleAIProposal}
                           >
-                            <Sparkles className="w-3 h-3 sm:w-4 sm:h-4 mr-2" />
+                            <Sparkles className="w-3 h-3 mr-1.5 shrink-0" />
                             AIに別の作品を提案させる
                           </Button>
-                        </div>
+                        )}
                       </div>
                     </motion.div>
                   ) : (
                     <div className="p-6 sm:p-8 text-center border-2 border-dashed rounded-lg bg-gray-50">
                       <ImageIcon className="w-10 h-10 sm:w-12 sm:h-12 mx-auto text-gray-400 mb-3" />
                       <p className="text-sm sm:text-base text-gray-600 mb-4">現在展示中の作品はありません</p>
-                      <Button 
-                        className="bg-gradient-to-r from-accent to-purple-500 hover:from-accent/90 hover:to-purple-600 text-white text-xs sm:text-sm"
-                        onClick={handleAIProposal}
+                      <div
+                        className={
+                          canAssignArtwork || canEditSpace
+                            ? "grid w-full max-w-2xl mx-auto grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3 sm:items-stretch"
+                            : "grid w-full max-w-2xl mx-auto grid-cols-1 gap-2"
+                        }
                       >
-                        <Sparkles className="w-3 h-3 sm:w-4 sm:h-4 mr-2" />
-                        AIに作品を提案させる
-                      </Button>
+                        {canAssignArtwork && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            disabled={!canRequestNewExhibition}
+                            title={
+                              !canRequestNewExhibition
+                                ? artworkSelectionBlockedTitle
+                                : undefined
+                            }
+                            className="w-full h-9 sm:h-9 justify-center text-[11px] sm:text-xs px-3 border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-50"
+                            onClick={() => {
+                              if (!canRequestNewExhibition) return;
+                              setManualArtworkDialogOpen(true);
+                            }}
+                          >
+                            手動で作品を選ぶ
+                          </Button>
+                        )}
+                        {canEditSpace && (
+                          <Button
+                            type="button"
+                            disabled={!canRequestNewExhibition}
+                            title={
+                              !canRequestNewExhibition
+                                ? artworkSelectionBlockedTitle
+                                : undefined
+                            }
+                            className="w-full h-9 sm:h-9 justify-center text-[11px] sm:text-xs px-3 bg-gradient-to-r from-accent to-purple-500 hover:from-accent/90 hover:to-purple-600 text-white disabled:opacity-50"
+                            onClick={handleAIProposal}
+                          >
+                            <Sparkles className="w-3 h-3 mr-1.5 shrink-0" />
+                            AIに作品を提案させる
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   )}
                 </CardContent>
@@ -1096,58 +1969,147 @@ export function CorporateSpaceDetailPage() {
             >
               <Card>
                 <CardHeader>
-                  <div className="flex items-center justify-between flex-col sm:flex-row gap-3 sm:gap-0">
-                    <div>
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0">
                       <CardTitle className="text-lg sm:text-xl">閲覧データとトレンド分析</CardTitle>
-                      <CardDescription className="text-xs sm:text-sm">スペース単位のパフォーマンス</CardDescription>
+                      <CardDescription className="text-xs sm:text-sm">
+                        QRコード読み取り時にサーバーへ記録されたスキャン数の推移です（作品ページの閲覧数とは別指標です）。
+                      </CardDescription>
                     </div>
-                    <Select value={timePeriod} onValueChange={setTimePeriod}>
-                      <SelectTrigger className="w-28 sm:w-32">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="week">週次</SelectItem>
-                        <SelectItem value="month">月次</SelectItem>
-                        <SelectItem value="quarter">四半期</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0 w-full sm:w-auto">
+                      {canEditSpace && canRequestNewExhibition ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="w-full sm:w-auto justify-center h-9 sm:h-9 text-[11px] sm:text-xs px-3 bg-gradient-to-r from-accent to-purple-500 hover:from-accent/90 hover:to-purple-600 text-white"
+                          onClick={handleAIProposal}
+                        >
+                          <Sparkles className="w-3 h-3 mr-1.5 shrink-0" />
+                          AIに作品を提案する
+                        </Button>
+                      ) : null}
+                      <Select value={timePeriod} onValueChange={setTimePeriod}>
+                        <SelectTrigger className="w-full sm:w-32">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="week">週次</SelectItem>
+                          <SelectItem value="month">月次</SelectItem>
+                          <SelectItem value="quarter">四半期</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="w-full h-[250px] sm:h-[300px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={trendData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                        <XAxis dataKey="week" stroke="#888" />
-                        <YAxis stroke="#888" />
-                        <Tooltip 
-                          contentStyle={{ 
-                            backgroundColor: 'white', 
-                            border: '1px solid #e5e7eb',
-                            borderRadius: '8px'
-                          }}
-                        />
-                        <Legend />
-                        <Line 
-                          type="monotone" 
-                          dataKey="views" 
-                          stroke="#3b82f6" 
-                          strokeWidth={3}
-                          name="QR閲覧数"
-                          dot={{ r: 5 }}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-
-                  <div className="mt-4 sm:mt-6 p-3 sm:p-4 bg-accent/5 border border-accent/20 rounded-lg">
-                    <div className="flex items-start gap-2">
-                      <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-accent flex-shrink-0 mt-0.5" />
-                      <p className="text-xs sm:text-sm text-gray-700">
-                        <span className="text-accent">AIによる分析：</span> この1ヶ月で閲覧数が最も伸びたのは「青の記憶」です。エントランスの明るさが作品の色彩を引き立てています。
-                      </p>
+                  {!spaceData?.qr_code_id ? (
+                    <p className="text-sm text-muted-foreground py-8 text-center px-2">
+                      このスペースにQRコードがまだありません。ページ内の「QRコード」から発行すると、ここにスキャン数の推移が表示されます。
+                    </p>
+                  ) : qrAnalyticsLoading ? (
+                    <div className="flex flex-col items-center justify-center gap-3 py-16 text-muted-foreground">
+                      <Loader2 className="w-9 h-9 animate-spin" aria-hidden />
+                      <span className="text-sm">分析データを読み込んでいます…</span>
                     </div>
-                  </div>
+                  ) : qrAnalyticsError ? (
+                    <p className="text-sm text-destructive py-8 text-center px-2">
+                      {qrAnalyticsError}
+                    </p>
+                  ) : (
+                    <>
+                      <div className="w-full h-[250px] sm:h-[300px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={qrChartRows}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                            <XAxis
+                              dataKey="label"
+                              stroke="#888"
+                              tick={{ fontSize: 10 }}
+                              interval={
+                                timePeriod === "quarter"
+                                  ? 6
+                                  : timePeriod === "month"
+                                    ? 2
+                                    : 0
+                              }
+                              angle={timePeriod === "quarter" ? -32 : 0}
+                              textAnchor={timePeriod === "quarter" ? "end" : "middle"}
+                              height={timePeriod === "quarter" ? 52 : 28}
+                            />
+                            <YAxis
+                              stroke="#888"
+                              allowDecimals={false}
+                              width={40}
+                            />
+                            <Tooltip
+                              contentStyle={{
+                                backgroundColor: "white",
+                                border: "1px solid #e5e7eb",
+                                borderRadius: "8px",
+                              }}
+                              formatter={(value: number | undefined) => [
+                                `${value ?? 0} 回`,
+                                "QRスキャン",
+                              ]}
+                              labelFormatter={(_, payload) => {
+                                const row = payload?.[0]?.payload as
+                                  | { date?: string }
+                                  | undefined;
+                                return row?.date ? `日付: ${row.date}` : "";
+                              }}
+                            />
+                            <Line
+                              type="monotone"
+                              dataKey="scans"
+                              stroke="#3b82f6"
+                              strokeWidth={2}
+                              name="QRスキャン数"
+                              dot={{ r: 3 }}
+                              connectNulls
+                            />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+
+                      {qrAnalytics && (
+                        <>
+                          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground border-t pt-3">
+                            <span>
+                              モバイル: {qrAnalytics.device_breakdown?.mobile ?? 0}
+                            </span>
+                            <span>
+                              デスクトップ:{" "}
+                              {qrAnalytics.device_breakdown?.desktop ?? 0}
+                            </span>
+                            <span>
+                              その他: {qrAnalytics.device_breakdown?.unknown ?? 0}
+                            </span>
+                          </div>
+
+                          <div className="mt-4 sm:mt-6 p-3 sm:p-4 bg-accent/5 border border-accent/20 rounded-lg">
+                            <div className="flex items-start gap-2">
+                              <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-accent flex-shrink-0 mt-0.5" />
+                              <div className="min-w-0 space-y-1">
+                                <p className="text-xs sm:text-sm text-gray-700 leading-relaxed">
+                                  <span className="text-accent font-medium">
+                                    AIによる分析：
+                                  </span>{" "}
+                                  {buildQrAnalyticsSummary(
+                                    qrAnalytics,
+                                    timePeriod as QrAnalyticsUiPeriod,
+                                  )}
+                                </p>
+                                <p className="text-[11px] sm:text-xs text-muted-foreground">
+                                  ※
+                                  上記はQRスキャンの記録データから自動生成した要約です（大規模言語モデルによる文章生成ではありません）。
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </>
+                  )}
                 </CardContent>
               </Card>
             </motion.div>
@@ -1165,50 +2127,109 @@ export function CorporateSpaceDetailPage() {
                   <CardDescription className="text-xs sm:text-sm">過去の展示・販売データ</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  {exhibitionHistory.map((item, index) => (
-                    <motion.div
-                      key={item.id}
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ duration: 0.5, delay: 1.0 + index * 0.1 }}
-                      className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 p-3 sm:p-4 border rounded-lg hover:shadow-md transition-all"
-                    >
-                      <div className="w-full sm:w-20 h-32 sm:h-20 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
-                        <ImageWithFallback
-                          src={item.image}
-                          alt={item.title}
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-                      <div className="flex-grow">
-                        <h3 className="text-base sm:text-lg text-primary mb-1">{item.title}</h3>
-                        <p className="text-xs sm:text-sm text-gray-600 mb-1">{item.artist}</p>
-                        <p className="text-xs text-gray-500">{item.period}</p>
-                      </div>
-                      <div className="text-left sm:text-right w-full sm:w-auto">
-                        {item.sold ? (
-                          <>
-                            <Badge className="bg-blue-100 text-blue-700 border-blue-200 mb-2">
-                              買売済
+                  {historyLoading ? (
+                    <div className="flex items-center justify-center gap-2 py-10 text-gray-600">
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <span className="text-sm">読み込み中…</span>
+                    </div>
+                  ) : exhibitionHistoryItems.length === 0 ? (
+                    <p className="text-sm text-gray-600 text-center py-8">
+                      まだ展示履歴がありません。作品を割り当てると、ここに記録されます。
+                    </p>
+                  ) : (
+                    exhibitionHistoryItems.map((item, index) => {
+                      const sold = item.artwork_status === "sold";
+                      const img =
+                        item.main_image_url ||
+                        item.artwork?.main_image_url ||
+                        DEFAULT_SPACE_IMAGE;
+                      const revenue =
+                        sold && item.price != null
+                          ? Math.round(Number(item.price))
+                          : 0;
+                      const showReDisplay =
+                        canRequestNewExhibition &&
+                        !sold &&
+                        item.assignment_status !== "displaying";
+                      return (
+                        <motion.div
+                          key={item.assignment_id}
+                          initial={{ opacity: 0, x: -20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ duration: 0.5, delay: 0.05 * index }}
+                          className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 p-3 sm:p-4 border rounded-lg hover:shadow-md transition-all"
+                        >
+                          <div className="w-full sm:w-20 h-32 sm:h-20 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
+                            <ImageWithFallback
+                              src={img}
+                              alt={item.title || "作品"}
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                          <div className="flex-grow min-w-0">
+                            <h3 className="text-base sm:text-lg text-primary mb-1 truncate">
+                              {item.title || "（無題）"}
+                            </h3>
+                            <p className="text-xs sm:text-sm text-gray-600 mb-1">
+                              {item.artist_name || "—"}
+                            </p>
+                            <p className="text-xs text-gray-500 mb-1">
+                              {formatDisplayPeriod(item)}
+                            </p>
+                            {item.scan_count > 0 && (
+                              <p className="text-xs text-gray-400">
+                                QRスキャン {item.scan_count} 回
+                              </p>
+                            )}
+                          </div>
+                          <div className="text-left sm:text-right w-full sm:w-auto flex flex-col gap-2 items-start sm:items-end">
+                            <Badge
+                              variant="outline"
+                              className={
+                                item.assignment_status === "displaying"
+                                  ? "border-green-200 bg-green-50 text-green-800"
+                                  : ""
+                              }
+                            >
+                              {assignmentStatusLabel(item.assignment_status)}
                             </Badge>
-                            <p className="text-sm text-accent">¥{item.revenue.toLocaleString()}</p>
-                          </>
-                        ) : (
-                          <>
-                            <Badge variant="outline" className="mb-2">展示のみ</Badge>
-                            <Button variant="ghost" size="sm" className="block sm:ml-auto">
-                              <RefreshCw className="w-3 h-3 sm:w-4 sm:h-4 mr-2" />
-                              <span className="text-xs sm:text-sm">再展示する</span>
-                            </Button>
-                          </>
-                        )}
-                      </div>
-                    </motion.div>
-                  ))}
-                  <Button variant="outline" className="w-full text-xs sm:text-sm">
-                    すべての履歴を表示
-                    <ChevronRight className="w-3 h-3 sm:w-4 sm:h-4 ml-2" />
-                  </Button>
+                            {sold ? (
+                              <>
+                                <Badge className="bg-blue-100 text-blue-700 border-blue-200">
+                                  販売済
+                                </Badge>
+                                {revenue > 0 && (
+                                  <p className="text-sm text-accent">
+                                    ¥{revenue.toLocaleString("ja-JP")}
+                                  </p>
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                <Badge variant="secondary" className="font-normal">
+                                  展示のみ
+                                </Badge>
+                                {showReDisplay && (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-auto py-1"
+                                    onClick={() => setReDisplayTarget(item)}
+                                  >
+                                    <RefreshCw className="w-3 h-3 sm:w-4 sm:h-4 mr-2" />
+                                    <span className="text-xs sm:text-sm">
+                                      再展示する
+                                    </span>
+                                  </Button>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </motion.div>
+                      );
+                    })
+                  )}
                 </CardContent>
               </Card>
             </motion.div>
@@ -1226,42 +2247,52 @@ export function CorporateSpaceDetailPage() {
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-                    <Button 
-                      variant="outline" 
-                      className="h-auto py-3 sm:py-4 flex-col gap-2"
-                      onClick={() => {
-                        if (currentArtwork) {
-                          navigate(`/artwork-return-request/${spaceId}`);
-                        } else {
-                          toast.error("展示中の作品がありません");
+                    {canEditSpace ? (
+                      <Button 
+                        variant="outline" 
+                        className="h-auto py-3 sm:py-4 flex-col gap-2"
+                        disabled={!canUseExhibitedArtworkActions}
+                        title={
+                          !canUseExhibitedArtworkActions
+                            ? exhibitedArtworkActionsDisabledTitle
+                            : undefined
                         }
-                      }}
-                    >
-                      <RefreshCw className="w-5 h-5 sm:w-6 sm:h-6" />
-                      <span className="text-xs sm:text-sm">作品の返却を申請</span>
-                    </Button>
+                        onClick={() => {
+                          if (!canUseExhibitedArtworkActions) return;
+                          navigate(`/artwork-return-request/${spaceId}`);
+                        }}
+                      >
+                        <RefreshCw className="w-5 h-5 sm:w-6 sm:h-6" />
+                        <span className="text-xs sm:text-sm">作品の返却を申請</span>
+                      </Button>
+                    ) : null}
                     <Button 
                       variant="outline" 
                       className="h-auto py-3 sm:py-4 flex-col gap-2"
-                      onClick={() => navigate(`/corporate-dashboard?tab=shipping`)}
+                      onClick={() => navigate("/corporate-dashboard#shipping")}
                     >
                       <Package className="w-5 h-5 sm:w-6 sm:h-6" />
                       <span className="text-xs sm:text-sm">配送状況を確認</span>
                     </Button>
-                    <Button 
-                      variant="outline" 
-                      className="h-auto py-3 sm:py-4 flex-col gap-2"
-                      onClick={() => {
-                        if (currentArtwork) {
-                          navigate(`/artwork-issue-report/${spaceId}`);
-                        } else {
-                          toast.error("展示中の作品がありません");
+                    {canEditSpace ? (
+                      <Button 
+                        variant="outline" 
+                        className="h-auto py-3 sm:py-4 flex-col gap-2"
+                        disabled={!canUseExhibitedArtworkActions}
+                        title={
+                          !canUseExhibitedArtworkActions
+                            ? exhibitedArtworkActionsDisabledTitle
+                            : undefined
                         }
-                      }}
-                    >
-                      <AlertCircle className="w-5 h-5 sm:w-6 sm:h-6" />
-                      <span className="text-xs sm:text-sm">破損・不具合を報告</span>
-                    </Button>
+                        onClick={() => {
+                          if (!canUseExhibitedArtworkActions) return;
+                          navigate(`/artwork-issue-report/${spaceId}`);
+                        }}
+                      >
+                        <AlertCircle className="w-5 h-5 sm:w-6 sm:h-6" />
+                        <span className="text-xs sm:text-sm">破損・不具合を報告</span>
+                      </Button>
+                    ) : null}
                   </div>
                 </CardContent>
               </Card>
@@ -1340,7 +2371,7 @@ export function CorporateSpaceDetailPage() {
                     variant="ghost" 
                     className="w-full justify-start" 
                     size="sm"
-                    onClick={() => navigate("/corporate-dashboard?tab=support")}
+                    onClick={() => navigate("/corporate-dashboard#support")}
                   >
                     <LifeBuoy className="w-3 h-3 sm:w-4 sm:h-4 mr-2" />
                     <span className="text-xs sm:text-sm">問い合わせ</span>
@@ -1529,6 +2560,83 @@ export function CorporateSpaceDetailPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <AlertDialog
+        open={reDisplayTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && reDisplaySubmitting) return;
+          if (!open) setReDisplayTarget(null);
+        }}
+      >
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-base sm:text-lg">
+              この作品を再展示しますか？
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-xs sm:text-sm text-muted-foreground">
+                <p>
+                  「
+                  <span className="font-medium text-foreground">
+                    {reDisplayTarget?.title || "（無題）"}
+                  </span>
+                  」をこのスペースに再度割り当てます。
+                </p>
+                {currentArtwork &&
+                  currentArtwork.id !== reDisplayTarget?.artwork_id && (
+                    <p>
+                      現在展示中の「{currentArtwork.title}
+                      」の展示は終了し、入れ替わります。
+                    </p>
+                  )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              className="text-xs sm:text-sm"
+              disabled={reDisplaySubmitting}
+            >
+              キャンセル
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-[#C3A36D] hover:bg-[#C3A36D]/90 text-white text-xs sm:text-sm"
+              disabled={reDisplaySubmitting}
+              onClick={(e) => {
+                e.preventDefault();
+                void handleConfirmReDisplay();
+              }}
+            >
+              {reDisplaySubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 inline animate-spin" />
+                  処理中…
+                </>
+              ) : (
+                "再展示する"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {canAssignArtwork && spaceId ? (
+        <ManualArtworkSelectDialog
+          open={manualArtworkDialogOpen}
+          onOpenChange={setManualArtworkDialogOpen}
+          spaceId={spaceId}
+          currentArtworkId={
+            spaceData.current_artwork_id ?? currentArtwork?.id ?? null
+          }
+          currentArtworkTitle={currentArtwork?.title ?? null}
+          pendingExhibitionArtworkId={
+            spaceData.pending_exhibition_artwork_id ?? null
+          }
+          pendingExhibitionTitle={pendingExhibitionArtwork?.title ?? null}
+          spaceBlocksNewExhibitionRequest={spaceHasArtworkInvolvement}
+          onAssigned={reloadSpaceAndDisplayedArtwork}
+        />
+      ) : null}
 
       {/* 作品配置エリア選択ダイアログ */}
       <ArtworkAreaSelectionDialog

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { motion } from "motion/react";
 import { Header } from "@/components/layout/Header";
@@ -9,73 +9,204 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { ImageWithFallback } from "@/components/common/ImageWithFallback";
-import { ArrowLeft, Package, Calendar, AlertCircle, CheckCircle2, TruckIcon } from "lucide-react";
+import {
+  ArrowLeft,
+  Package,
+  Calendar,
+  AlertCircle,
+  CheckCircle2,
+  TruckIcon,
+  Loader2,
+} from "lucide-react";
+import {
+  getReturnRequestContext,
+  createReturnRequest,
+  type ReturnRequestContext,
+} from "@/services/space.service";
+import { useAuth } from "@/contexts/AuthContext";
+import { corporateRoleAllowsEdit } from "@/lib/corporatePermissions";
 
-// モックデータ
-const MOCK_ARTWORK = {
-  id: "art-001",
-  title: "青の記憶",
-  artist: "山田太郎",
-  image: "https://images.unsplash.com/photo-1541961017774-22349e4a1262?w=800&h=600&fit=crop",
-  displayStartDate: "2024-05-15", // ISO format for calculation
-  displayStartDateFormatted: "2024年5月15日",
-  location: "1階エントランス"
-};
+function formatJaDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(`${iso}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("ja-JP", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
 
 export function ArtworkReturnRequestPage() {
   const navigate = useNavigate();
   const { spaceId } = useParams();
+  const { userType, corporateRole, isInitialized, isAuthenticated } = useAuth();
+  const [ctx, setCtx] = useState<ReturnRequestContext | null>(null);
+  const [contextLoading, setContextLoading] = useState(true);
+  const [contextError, setContextError] = useState<string | null>(null);
   const [returnReason, setReturnReason] = useState("");
   const [additionalComments, setAdditionalComments] = useState("");
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // 展示日数と送料負担者を計算
-  const { displayDays, shippingCostBearer } = useMemo(() => {
-    const startDate = new Date(MOCK_ARTWORK.displayStartDate);
-    const today = new Date();
-    const diffTime = Math.abs(today.getTime() - startDate.getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
-    return {
-      displayDays: diffDays,
-      shippingCostBearer: diffDays <= 180 ? "corporate" : "artist"
+  useEffect(() => {
+    if (!spaceId) {
+      setContextLoading(false);
+      setContextError("スペースIDが不正です");
+      return;
+    }
+    if (!isInitialized) return;
+    if (isAuthenticated && userType === "corporate" && corporateRole === null) {
+      return;
+    }
+    if (
+      isAuthenticated &&
+      userType === "corporate" &&
+      !corporateRoleAllowsEdit(corporateRole)
+    ) {
+      setContextLoading(false);
+      setContextError("この操作には編集者以上の権限が必要です。");
+      setCtx(null);
+      return;
+    }
+    let cancelled = false;
+    setContextLoading(true);
+    setContextError(null);
+    getReturnRequestContext(spaceId)
+      .then((data) => {
+        if (!cancelled) setCtx(data);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setCtx(null);
+          setContextError(
+            e instanceof Error ? e.message : "情報の取得に失敗しました",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setContextLoading(false);
+      });
+    return () => {
+      cancelled = true;
     };
-  }, []);
+  }, [spaceId, isInitialized, isAuthenticated, userType, corporateRole]);
+
+  const displayDays = ctx?.display_days ?? 0;
+  const shippingCostBearer = ctx?.shipping_cost_bearer ?? "corporate";
+
+  const artworkForConfirm = useMemo(() => {
+    if (!ctx) return null;
+    return {
+      id: ctx.artwork_id,
+      title: ctx.artwork_title || "無題",
+      artist: ctx.artist_name || "—",
+      image:
+        ctx.main_image_url ||
+        "https://images.unsplash.com/photo-1541961017774-22349e4a1262?w=800&h=600&fit=crop",
+      displayLocation: ctx.space_name,
+      artistAddress: ctx.artist_address_formatted || undefined,
+      artistPhone: ctx.artist_phone || undefined,
+      spaceAddressLine: ctx.space_address_formatted || undefined,
+      corporateCompanyName: ctx.corporate_company_name || undefined,
+      corporatePhone: ctx.corporate_phone || undefined,
+      corporateAddressLine: ctx.corporate_address_formatted || undefined,
+    };
+  }, [ctx]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
+    if (
+      userType === "corporate" &&
+      !corporateRoleAllowsEdit(corporateRole)
+    ) {
+      toast.error("この操作には編集者以上の権限が必要です。");
+      return;
+    }
+
+    if (!spaceId || !ctx) {
+      toast.error("スペース情報を読み込めませんでした");
+      return;
+    }
+
+    if (!ctx.can_submit) {
+      toast.error("返却申請は現在お申し込みいただけません");
+      return;
+    }
+
     if (!returnReason) {
       toast.error("返却理由を選択してください");
       return;
     }
-    
+
     if (!agreedToTerms) {
       toast.error("返却条件に同意してください");
       return;
     }
 
     setIsSubmitting(true);
-    
-    // TODO: API呼び出し
-    setTimeout(() => {
-      setIsSubmitting(false);
-      // 確認ページに遷移
+
+    try {
+      const created = await createReturnRequest(spaceId, {
+        reason_code: returnReason,
+        additional_notes: additionalComments.trim() || undefined,
+      });
       navigate(`/artwork-return-confirmation/${spaceId}`, {
         state: {
-          artwork: MOCK_ARTWORK,
+          artwork: artworkForConfirm,
           returnReason,
           additionalComments,
           displayDays,
-          shippingCostBearer
-        }
+          shippingCostBearer: created.shipping_cost_bearer,
+          returnRequestId: created.id,
+          requestedDate: created.requested_date,
+          reasonSummary: created.reason,
+        },
       });
-    }, 1000);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "申請に失敗しました");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
+
+  if (contextLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Header />
+        <main className="max-w-4xl mx-auto px-4 sm:px-6 py-24 flex flex-col items-center justify-center gap-3">
+          <Loader2 className="w-10 h-10 animate-spin text-accent" aria-hidden />
+          <p className="text-sm text-muted-foreground">読み込み中…</p>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
+  if (contextError || !ctx) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Header />
+        <main className="max-w-4xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
+          <Button
+            variant="ghost"
+            onClick={() => navigate(`/corporate-space/${spaceId}`)}
+            className="mb-4 gap-2"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            スペース詳細に戻る
+          </Button>
+          <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-6 text-sm text-center text-destructive">
+            {contextError || "表示できる情報がありません"}
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -99,6 +230,12 @@ export function ArtworkReturnRequestPage() {
           </p>
         </div>
 
+        {!ctx.can_submit && ctx.pending_message && (
+          <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+            {ctx.pending_message}
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* 現在の展示作品 */}
           <motion.div
@@ -117,24 +254,31 @@ export function ArtworkReturnRequestPage() {
                 <div className="flex flex-col sm:flex-row gap-4 sm:gap-6">
                   <div className="w-full sm:w-40 h-40 rounded-lg overflow-hidden flex-shrink-0">
                     <ImageWithFallback
-                      src={MOCK_ARTWORK.image}
-                      alt={MOCK_ARTWORK.title}
+                      src={
+                        ctx.main_image_url ||
+                        "https://images.unsplash.com/photo-1541961017774-22349e4a1262?w=800&h=600&fit=crop"
+                      }
+                      alt={ctx.artwork_title || "作品"}
                       className="w-full h-full object-cover"
                     />
                   </div>
                   <div className="flex-grow space-y-3">
                     <div>
-                      <h3 className="text-base sm:text-lg text-[#3A3A3A] mb-1">{MOCK_ARTWORK.title}</h3>
-                      <p className="text-sm sm:text-base text-gray-600">{MOCK_ARTWORK.artist}</p>
+                      <h3 className="text-base sm:text-lg text-[#3A3A3A] mb-1">
+                        {ctx.artwork_title || "無題"}
+                      </h3>
+                      <p className="text-sm sm:text-base text-gray-600">
+                        {ctx.artist_name || "—"}
+                      </p>
                     </div>
                     <div className="flex flex-wrap gap-3 sm:gap-4 text-sm text-gray-600">
                       <div className="flex items-center gap-2">
                         <Calendar className="w-4 h-4" />
-                        展示開始：{MOCK_ARTWORK.displayStartDateFormatted}
+                        展示開始：{formatJaDate(ctx.display_start_date)}
                       </div>
                       <div className="flex items-center gap-2">
                         <Package className="w-4 h-4" />
-                        場所：{MOCK_ARTWORK.location}
+                        スペース：{ctx.space_name}
                       </div>
                     </div>
                     <div className="pt-3 border-t">
@@ -356,7 +500,12 @@ export function ArtworkReturnRequestPage() {
             </Button>
             <Button
               type="submit"
-              disabled={!returnReason || !agreedToTerms || isSubmitting}
+              disabled={
+                !returnReason ||
+                !agreedToTerms ||
+                isSubmitting ||
+                !ctx.can_submit
+              }
               className="bg-accent hover:bg-accent/90 min-w-[160px] w-full sm:w-auto"
             >
               {isSubmitting ? "送信中..." : "返却申請を送信"}

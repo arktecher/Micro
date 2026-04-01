@@ -28,6 +28,10 @@ import { Badge } from "@/components/ui/badge";
 import { StyleTagsSection } from "@/components/common/StyleTagsSection";
 import { createImagePreviewUrl, isHeicFile } from "@/lib/heicConverter";
 import { toast } from "sonner";
+import {
+  initGoOnlineQueue,
+  artworkOnlineConfirmPath,
+} from "@/lib/artworkGoOnlineFlow";
 import { artworkService } from "@/services/artwork.service";
 import { useAuth } from "@/contexts/AuthContext";
 import { Loader2 } from "lucide-react";
@@ -356,14 +360,19 @@ export function ArtistArtworksPage() {
 
       toast.success(`${createdArtworks.length}件の作品を登録しました`);
 
-    // Check if user has already agreed to terms
-    const hasAgreed = localStorage.getItem("mgj_artist_terms_agreed");
-    if (hasAgreed === "true") {
-      // User has already agreed, skip contract page and go directly to artwork selection
-      navigate("/artwork-selection");
-    } else {
-      // User hasn't agreed yet, show contract page
-      navigate("/signup/artist/contract");
+      const createdIds = createdArtworks.map((a) => a.id).filter(Boolean);
+      if (createdIds.length === 0) {
+        navigate("/dashboard");
+        return;
+      }
+      initGoOnlineQueue(createdIds);
+
+      // Check if user has already agreed to terms
+      const hasAgreed = localStorage.getItem("mgj_artist_terms_agreed");
+      if (hasAgreed === "true") {
+        navigate(artworkOnlineConfirmPath(createdIds[0]));
+      } else {
+        navigate("/signup/artist/contract");
       }
     } catch (error: any) {
       console.error("Error creating artworks:", error);

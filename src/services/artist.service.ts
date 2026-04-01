@@ -9,6 +9,18 @@ export interface BiographyEntry {
   content: string;
 }
 
+export interface ArtistShippingAddress {
+  id: string;
+  /** Synced from public profile name; not edited separately. */
+  name: string;
+  postal_code: string;
+  prefecture: string;
+  city: string;
+  street_address: string;
+  building_name?: string | null;
+  phone?: string | null;
+}
+
 export interface ArtistProfile {
   id: string;
   name: string;
@@ -19,9 +31,20 @@ export interface ArtistProfile {
   phone_number?: string;
   address?: string;
   postal_code?: string;
+  /** Best match from `addresses` (shipping preferred, then primary). */
+  shipping_address?: ArtistShippingAddress | null;
   profile_completion: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface UpsertArtistShippingAddressRequest {
+  postal_code: string;
+  prefecture: string;
+  city: string;
+  street_address: string;
+  building_name?: string | null;
+  phone?: string | null;
 }
 
 export interface UpdateArtistProfileRequest {
@@ -38,6 +61,7 @@ export interface ArtworkCounts {
   draft: number;
   published: number;
   exhibited: number;
+  in_transit: number;
   sold: number;
   recalled: number;
 }
@@ -149,6 +173,12 @@ export const artistService = {
    */
   async updateProfile(data: UpdateArtistProfileRequest): Promise<ArtistProfile> {
     return api.put<ArtistProfile>("/artists/me/profile", data);
+  },
+
+  async upsertShippingAddress(
+    data: UpsertArtistShippingAddressRequest
+  ): Promise<ArtistShippingAddress> {
+    return api.put<ArtistShippingAddress>("/artists/me/shipping-address", data);
   },
 
   /**

@@ -3,6 +3,7 @@ import { Heart } from "lucide-react";
 
 import { useAuth } from "@/contexts/AuthContext";
 import { getFavoritesKey } from "@/lib/storageKeys";
+import { toggleFavorite } from "@/services/corporateFavorites.service";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,7 @@ interface ArtworkCardProps {
 
 export function ArtworkCard({ artwork, onClick }: ArtworkCardProps) {
   const { isAuthenticated, userType } = useAuth();
+  const isArtistUser = userType === "artist";
   const [isLiked, setIsLiked] = useState(false);
   const [showSignupPrompt, setShowSignupPrompt] = useState(false);
 
@@ -38,33 +40,37 @@ export function ArtworkCard({ artwork, onClick }: ArtworkCardProps) {
     }
 
     const newIsLiked = !isLiked;
-    setIsLiked(newIsLiked);
+    setIsLiked(newIsLiked); // optimistic UI
 
-    // Update localStorage
-    const storageKey = getFavoritesKey(userType);
-    const favorites = JSON.parse(localStorage.getItem(storageKey) || "[]");
-
-    if (newIsLiked) {
-      if (!favorites.includes(artwork.id)) {
-        favorites.push(artwork.id);
-        localStorage.setItem(storageKey, JSON.stringify(favorites));
-      }
+    if (userType === "corporate") {
+      // Corporate: persist to DB via API (service also syncs localStorage + dispatches event)
+      toggleFavorite(artwork.id, !newIsLiked).catch(() => {
+        setIsLiked(!newIsLiked); // revert on error
+      });
     } else {
-      const index = favorites.indexOf(artwork.id);
-      if (index > -1) {
-        favorites.splice(index, 1);
-        localStorage.setItem(storageKey, JSON.stringify(favorites));
+      // Non-corporate: localStorage only
+      const storageKey = getFavoritesKey(userType);
+      const favorites = JSON.parse(localStorage.getItem(storageKey) || "[]") as string[];
+      if (newIsLiked) {
+        if (!favorites.includes(artwork.id)) {
+          favorites.push(artwork.id);
+          localStorage.setItem(storageKey, JSON.stringify(favorites));
+        }
+      } else {
+        const index = favorites.indexOf(artwork.id);
+        if (index > -1) {
+          favorites.splice(index, 1);
+          localStorage.setItem(storageKey, JSON.stringify(favorites));
+        }
       }
+      window.dispatchEvent(new Event("favoritesUpdated"));
     }
-
-    // Dispatch event to update header count
-    window.dispatchEvent(new Event("favoritesUpdated"));
   };
 
   return (
     <>
       <Card
-        className="group overflow-hidden border-0 shadow-none hover:shadow-xl transition-all duration-300 cursor-pointer"
+        className="group cursor-pointer overflow-hidden rounded-xl border border-gray-200/90 bg-white shadow-sm transition-all duration-300 hover:border-gray-300 hover:shadow-md"
         onClick={onClick}
       >
         {/* Thumbnail - Square 1:1 */}
@@ -138,13 +144,15 @@ export function ArtworkCard({ artwork, onClick }: ArtworkCardProps) {
               </p>
             </div>
 
-            <Button
-              variant="outline"
-              size="sm"
-              className="opacity-0 group-hover:opacity-100 transition-opacity hidden sm:flex text-xs sm:text-sm"
-            >
-              詳細を見る
-            </Button>
+            {!isArtistUser && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="opacity-0 group-hover:opacity-100 transition-opacity hidden sm:flex text-xs sm:text-sm"
+              >
+                詳細を見る
+              </Button>
+            )}
           </div>
         </div>
       </Card>

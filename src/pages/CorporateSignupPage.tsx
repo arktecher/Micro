@@ -29,8 +29,7 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import {
   createSpace,
-  updateSpace as updateSpaceApi,
-  uploadSpaceImage,
+  uploadSpaceRegistrationImage,
 } from "@/services/space.service";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
@@ -677,24 +676,22 @@ export function CorporateSignupPage() {
       const postalForApi =
         postalNormalized.length === 7 ? postalCode.replace(/-/g, "") : undefined;
 
+      const urls: string[] = [];
+      for (const img of space.uploadedImages) {
+        const up = await uploadSpaceRegistrationImage(img.file, space.id);
+        urls.push(up.url);
+      }
+
       const created = await createSpace({
         name: space.spaceName.trim(),
         facility_type: facilityTypeApi,
         description: description ?? null,
         address: space.location.trim(),
         postal_code: postalForApi ?? null,
+        photo_urls: urls.length > 0 ? urls : null,
       });
 
-      const urls: string[] = [];
-      for (const img of space.uploadedImages) {
-        const up = await uploadSpaceImage(img.file, created.id);
-        urls.push(up.url);
-      }
-
-      let finalSpace = created;
-      if (urls.length > 0) {
-        finalSpace = await updateSpaceApi(created.id, { photo_urls: urls });
-      }
+      const finalSpace = created;
 
       const imageUrls = finalSpace.photo_urls?.length
         ? finalSpace.photo_urls

@@ -449,14 +449,14 @@ export function CorporateDashboard() {
             ({
               id: f.id,
               title: f.title ?? "",
-              artist: f.artist_name ?? "",
-              image: f.main_image_url ?? "",
+              artist: f.artist_name ? { id: "", name: f.artist_name } : undefined,
+              main_image_url: f.main_image_url ?? "",
               price: f.price ?? 0,
               size: f.size ?? "",
               status: (f.status as Artwork["status"]) ?? "published",
               dimensions: { width: 0, height: 0, depth: 0 },
               year: 0,
-            }) as Artwork,
+            }) as unknown as Artwork,
         ),
       );
     } catch (e) {
@@ -486,14 +486,14 @@ export function CorporateDashboard() {
             ({
               id: f.id,
               title: f.title ?? "",
-              artist: f.artist_name ?? "",
-              image: f.main_image_url ?? "",
+              artist: f.artist_name ? { id: "", name: f.artist_name } : undefined,
+              main_image_url: f.main_image_url ?? "",
               price: f.price ?? 0,
               size: f.size ?? "",
               status: (f.status as Artwork["status"]) ?? "published",
               dimensions: { width: 0, height: 0, depth: 0 },
               year: 0,
-            }) as Artwork,
+            }) as unknown as Artwork,
         ),
       );
     } catch (e) {

@@ -27,6 +27,10 @@ import {
 } from "lucide-react";
 
 import { useAuth } from "@/contexts/AuthContext";
+import {
+  createSpace,
+  uploadSpaceRegistrationImage,
+} from "@/services/space.service";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
@@ -117,9 +121,35 @@ interface Space {
   isRegistered: boolean;
 }
 
+function buildFacilityTypeString(space: Space): string {
+  const selectedFacility = FACILITY_TYPES.find((f) => f.id === space.facilityType);
+  const facilityLabel =
+    space.facilityType === "other"
+      ? (space.facilityTypeOther || "その他").trim()
+      : selectedFacility?.label || space.facilityType;
+  const subLabel =
+    space.subType === "その他"
+      ? (space.subTypeOther || "").trim()
+      : space.subType;
+  const combined = subLabel ? `${facilityLabel} / ${subLabel}` : facilityLabel;
+  return combined.slice(0, 100);
+}
+
+function buildSpaceDescription(space: Space): string | undefined {
+  const parts: string[] = [];
+  if (space.subType === "その他" && space.subTypeOther?.trim()) {
+    parts.push(`具体的な場所（詳細）: ${space.subTypeOther.trim()}`);
+  }
+  if (space.facilityType === "other" && space.facilityTypeOther?.trim()) {
+    parts.push(`施設概要（詳細）: ${space.facilityTypeOther.trim()}`);
+  }
+  const text = parts.join("\n").trim();
+  return text.length > 0 ? text : undefined;
+}
+
 export function CorporateSignupPage() {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { login, isAuthenticated, userType, isInitialized } = useAuth();
   const [searchParams] = useSearchParams();
   const location = useLocation();
 
@@ -145,6 +175,7 @@ export function CorporateSignupPage() {
     return (sp.get("addSpace") === "true" || hp.get("addSpace") === "true") ? 2 : 1;
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [registeringSpaceId, setRegisteringSpaceId] = useState<string | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
 
@@ -248,6 +279,17 @@ export function CorporateSignupPage() {
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [currentStep]);
+
+  // addSpace モードはメール確認後の法人ユーザーのみ（API 登録に認証が必要）
+  useEffect(() => {
+    if (!isAddSpaceMode || !isInitialized) return;
+    if (!isAuthenticated || userType !== "corporate") {
+      toast.error("ログインが必要です", {
+        description: "法人アカウントでログインしてからスペースを追加してください。",
+      });
+      navigate("/login/corporate", { replace: true });
+    }
+  }, [isAddSpaceMode, isInitialized, isAuthenticated, userType, navigate]);
 
   // スペース追加モードの時、既存の会社情報を読み込む
   useEffect(() => {
@@ -507,32 +549,23 @@ export function CorporateSignupPage() {
   };
 
   const handleSubmit = async () => {
-    // For now, spaces are saved locally
-    // TODO: Create spaces via API after corporate signup is complete
+    const pending = spaces.filter((s) => !s.isRegistered);
+    if (pending.length === 0) {
+      setShowSuccess(true);
+      return;
+    }
     setIsSubmitting(true);
-    
     try {
-      // Save spaces to localStorage for now
-      // In the future, this will be an API call to create spaces
-      const spacesData = spaces.map(space => ({
-        id: space.id,
-        facilityType: space.facilityType,
-        facilityTypeOther: space.facilityTypeOther,
-        subType: space.subType,
-        subTypeOther: space.subTypeOther,
-        spaceName: space.spaceName,
-        location: space.location,
-      }));
-      
-      localStorage.setItem("mgj_corporate_spaces", JSON.stringify(spacesData));
-      
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      
+      for (const s of pending) {
+        const ok = await registerSpace(s.id, { allowNavigate: false });
+        if (!ok) {
+          setIsSubmitting(false);
+          return;
+        }
+      }
       setIsSubmitting(false);
       setShowSuccess(true);
-    } catch (error) {
-      console.error("Error saving spaces:", error);
-      toast.error("スペース情報の保存に失敗しました");
+    } catch {
       setIsSubmitting(false);
     }
   };
@@ -555,8 +588,17 @@ export function CorporateSignupPage() {
   };
 
   const removeSpace = (id: string) => {
-    if (spaces.length > 1) {
-      setSpaces((prev) => prev.filter((space) => space.id !== id));
+    if (spaces.length <= 1) return;
+    const next = spaces.filter((space) => space.id !== id);
+    setSpaces(next);
+    // 未登録のスペースを削除した結果、残りがすべて登録済みなら「追加する分は終わった」とみなしてダッシュボードへ
+    if (next.length > 0 && next.every((s) => s.isRegistered)) {
+      toast.success("スペース登録を完了しました", {
+        description: "ダッシュボードへ移動します。",
+      });
+      setTimeout(() => {
+        navigate("/corporate-dashboard", { state: { openTab: "spaces" } });
+      }, 1500);
     }
   };
 
@@ -570,11 +612,50 @@ export function CorporateSignupPage() {
     updateSpace(spaceId, "location", companyAddress);
   };
 
-  const registerSpace = (spaceId: string) => {
+  const registerSpace = async (
+    spaceId: string,
+    options?: { allowNavigate?: boolean }
+  ): Promise<boolean> => {
+    const allowNavigate = options?.allowNavigate !== false;
     const space = spaces.find((s) => s.id === spaceId);
-    if (!space) return;
+    if (!space) return false;
 
-    updateSpace(spaceId, "isRegistered", true);
+    if (!localStorage.getItem("mgj_access_token")) {
+      toast.error("セッションの有効期限が切れています", {
+        description: "再度ログインしてください。",
+      });
+      navigate("/login/corporate");
+      return false;
+    }
+
+    if (!space.facilityType) {
+      toast.error("施設概要を選択してください");
+      return false;
+    }
+    if (space.facilityType === "other" && !space.facilityTypeOther?.trim()) {
+      toast.error("施設概要（その他）を入力してください");
+      return false;
+    }
+    if (!space.subType) {
+      toast.error("具体的な場所を選択してください");
+      return false;
+    }
+    if (space.subType === "その他" && !space.subTypeOther?.trim()) {
+      toast.error("具体的な場所（その他）を入力してください");
+      return false;
+    }
+    if (!space.spaceName?.trim()) {
+      toast.error("スペース名を入力してください");
+      return false;
+    }
+    if (!space.location?.trim()) {
+      toast.error("所在地を入力してください");
+      return false;
+    }
+    if (space.uploadedImages.length < 1) {
+      toast.error("スペースの写真を1枚以上アップロードしてください");
+      return false;
+    }
 
     const selectedFacility = FACILITY_TYPES.find(
       (f) => f.id === space.facilityType
@@ -587,39 +668,95 @@ export function CorporateSignupPage() {
     const subTypeLabel =
       space.subType === "その他" ? space.subTypeOther : space.subType;
 
-    const savedSpaces = JSON.parse(
-      localStorage.getItem("mgj_registered_spaces") || "[]"
-    );
-    const uploadedImages = space.uploadedImages.map((img) => img.preview);
-    const newSpace = {
-      id: space.id,
-      name: space.spaceName,
-      facilityType: facilityTypeLabel,
-      subType: subTypeLabel,
-      location: space.location,
-      images: uploadedImages,
-      image:
-        uploadedImages.length > 0
-          ? uploadedImages[0]
-          : "https://images.unsplash.com/photo-1497366216548-37526070297c?w=800",
-      status: "未選択" as const,
-      hasAIProposal: false,
-      currentArtwork: null,
-      pastArtworks: [],
-      totalSales: 0,
-      totalRevenue: 0,
-      registeredAt: new Date().toISOString(),
-    };
+    setRegisteringSpaceId(spaceId);
+    try {
+      const facilityTypeApi = buildFacilityTypeString(space);
+      const description = buildSpaceDescription(space);
+      const postalNormalized = postalCode.replace(/-/g, "");
+      const postalForApi =
+        postalNormalized.length === 7 ? postalCode.replace(/-/g, "") : undefined;
 
-    savedSpaces.push(newSpace);
-    localStorage.setItem("mgj_registered_spaces", JSON.stringify(savedSpaces));
+      const urls: string[] = [];
+      for (const img of space.uploadedImages) {
+        const up = await uploadSpaceRegistrationImage(img.file, space.id);
+        urls.push(up.url);
+      }
 
-    toast.success("スペースを登録しました！", {
-      description: "ダッシュボードでアート作品を選択できます。",
-    });
-    setTimeout(() => {
-      navigate("/corporate-dashboard", { state: { openTab: "spaces" } });
-    }, 1500);
+      const created = await createSpace({
+        name: space.spaceName.trim(),
+        facility_type: facilityTypeApi,
+        description: description ?? null,
+        address: space.location.trim(),
+        postal_code: postalForApi ?? null,
+        photo_urls: urls.length > 0 ? urls : null,
+      });
+
+      const finalSpace = created;
+
+      const imageUrls = finalSpace.photo_urls?.length
+        ? finalSpace.photo_urls
+        : urls;
+      const primaryImage =
+        imageUrls && imageUrls.length > 0
+          ? imageUrls[0]
+          : "https://images.unsplash.com/photo-1497366216548-37526070297c?w=800";
+
+      const savedSpaces = JSON.parse(
+        localStorage.getItem("mgj_registered_spaces") || "[]"
+      );
+      const newSpace = {
+        id: finalSpace.id,
+        name: finalSpace.name,
+        facilityType: facilityTypeLabel,
+        subType: subTypeLabel,
+        location: space.location,
+        images: imageUrls || [],
+        image: primaryImage,
+        status: "未選択" as const,
+        hasAIProposal: false,
+        currentArtwork: null,
+        pastArtworks: [],
+        totalSales: 0,
+        totalRevenue: 0,
+        registeredAt: new Date().toISOString(),
+      };
+
+      savedSpaces.push(newSpace);
+      localStorage.setItem("mgj_registered_spaces", JSON.stringify(savedSpaces));
+
+      updateSpace(spaceId, "isRegistered", true);
+
+      // 複数スペースがある場合は、すべて登録完了してからダッシュボードへ遷移する
+      const otherSpacesAllRegistered = spaces
+        .filter((s) => s.id !== spaceId)
+        .every((s) => s.isRegistered);
+      const isLastPlannedSpace = otherSpacesAllRegistered;
+
+      if (isLastPlannedSpace) {
+        toast.success("スペースを登録しました！", {
+          description: "ダッシュボードへ移動します。",
+        });
+      } else {
+        toast.success("スペースを登録しました", {
+          description: "残りのスペースの入力を続けてください。すべて完了するとダッシュボードへ進めます。",
+        });
+      }
+
+      if (allowNavigate && isLastPlannedSpace) {
+        setTimeout(() => {
+          navigate("/corporate-dashboard", { state: { openTab: "spaces" } });
+        }, 1500);
+      }
+      return true;
+    } catch (error: unknown) {
+      console.error("Space registration error:", error);
+      const message =
+        error instanceof Error ? error.message : "スペースの登録に失敗しました";
+      toast.error(message);
+      return false;
+    } finally {
+      setRegisteringSpaceId(null);
+    }
   };
 
   const handleImageUpload = async (
@@ -1194,7 +1331,7 @@ export function CorporateSignupPage() {
                     スペース登録
                   </h3>
                   <p className="text-xs sm:text-sm text-gray-600 mt-1">
-                    複数のスペースを登録できます。後で追加・編集も可能です。
+                    複数のスペースを登録できます。追加したすべてのスペースを登録し終えるとダッシュボードへ進めます（後から追加・編集も可能です）。
                   </p>
                 </div>
                 <Badge className="bg-[#C3A36D] text-white px-2 sm:px-3 py-1 text-xs sm:text-sm">
@@ -1413,7 +1550,7 @@ export function CorporateSignupPage() {
                           <ImageIcon className="w-4 h-4 text-[#C3A36D]" />
                           スペースの写真{" "}
                           <span className="text-gray-400 text-xs">
-                            (任意・最大3枚)
+                            (必須・1〜3枚)
                           </span>
                         </Label>
 
@@ -1477,15 +1614,24 @@ export function CorporateSignupPage() {
                       {/* この場所を登録するボタン */}
                       <div className="pt-2 sm:pt-4">
                         <Button
-                          onClick={() => registerSpace(space.id)}
-                          disabled={space.isRegistered}
+                          onClick={() => void registerSpace(space.id)}
+                          disabled={
+                            space.isRegistered ||
+                            registeringSpaceId !== null ||
+                            space.uploadedImages.length < 1
+                          }
                           className={`w-full h-11 sm:h-12 text-sm sm:text-base ${
                             space.isRegistered
                               ? "bg-green-500 hover:bg-green-600"
                               : "bg-[#C3A36D] hover:bg-[#B8975F]"
                           } text-white`}
                         >
-                          {space.isRegistered ? (
+                          {registeringSpaceId === space.id ? (
+                            <>
+                              <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />
+                              <span>登録中...</span>
+                            </>
+                          ) : space.isRegistered ? (
                             <>
                               <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5" />
                               <span>登録完了</span>

@@ -22,6 +22,8 @@ npm run dev
 npm run build
 ```
 
+`vite build` loads `.env.production` (API URL for the hosted backend). On [Vercel](https://vercel.com), set the same variables under **Project → Settings → Environment Variables**: `VITE_API_BASE_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (production URL: `https://micro-salz.vercel.app`).
+
 ## Project Structure
 
 - `src/components/` - React components

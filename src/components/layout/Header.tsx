@@ -10,14 +10,19 @@ import {
   Building2,
   Package,
   Palette,
-  MapPin,
   Mail,
   Menu,
   X,
+  Home,
+  Sparkles,
+  Truck,
+  Wallet,
+  LifeBuoy,
 } from "lucide-react";
 
 import { useAuth } from "@/contexts/AuthContext";
 import { getFavoritesKey } from "@/lib/storageKeys";
+import { fetchFavoriteIds } from "@/services/corporateFavorites.service";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -70,7 +75,7 @@ export function Header() {
     };
   }, [lastScrollY]);
 
-  // Handle favorites count
+  // Handle favorites count — read from localStorage (kept in sync by service layer)
   useEffect(() => {
     const updateFavoritesCount = () => {
       if (isAuthenticated) {
@@ -91,6 +96,13 @@ export function Header() {
       window.removeEventListener("favoritesUpdated", updateFavoritesCount);
       window.removeEventListener("storage", updateFavoritesCount);
     };
+  }, [isAuthenticated, userType]);
+
+  // Seed localStorage from DB on corporate login so the badge is accurate
+  useEffect(() => {
+    if (isAuthenticated && userType === "corporate") {
+      fetchFavoriteIds().catch(() => {/* silent — falls back to localStorage */});
+    }
   }, [isAuthenticated, userType]);
 
   const handleLogout = () => {
@@ -352,7 +364,7 @@ export function Header() {
                       <ChevronDown className="w-4 h-4" />
                     </button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuContent align="end" className="w-56">
                     {currentUser && (
                       <>
                         <DropdownMenuLabel className="font-normal">
@@ -379,14 +391,48 @@ export function Header() {
                     <DropdownMenuItem
                       onSelect={() => navigate("/corporate-dashboard#spaces")}
                     >
-                      <MapPin className="w-4 h-4 mr-2" />
+                      <Home className="w-4 h-4 mr-2" />
                       スペース管理
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      onSelect={() => navigate("/corporate-dashboard#artworks")}
+                      onSelect={() =>
+                        navigate("/corporate-dashboard#recommended")
+                      }
                     >
-                      <Palette className="w-4 h-4 mr-2" />
-                      展示作品一覧
+                      <Sparkles className="w-4 h-4 mr-2" />
+                      作品一覧
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() =>
+                        navigate("/corporate-dashboard#favorites")
+                      }
+                    >
+                      <Heart className="w-4 h-4 mr-2" />
+                      お気に入り
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() =>
+                        navigate("/corporate-dashboard#shipping")
+                      }
+                    >
+                      <Truck className="w-4 h-4 mr-2" />
+                      配送状況
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() =>
+                        navigate("/corporate-dashboard#payment")
+                      }
+                    >
+                      <Wallet className="w-4 h-4 mr-2" />
+                      入出金管理
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() =>
+                        navigate("/corporate-dashboard#support")
+                      }
+                    >
+                      <LifeBuoy className="w-4 h-4 mr-2" />
+                      サポート
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
@@ -629,16 +675,48 @@ export function Header() {
                         onClick={handleMobileNavClick}
                         className="flex items-center gap-2 text-gray-600 hover:text-primary transition-colors py-2"
                       >
-                        <MapPin className="w-4 h-4" />
+                        <Home className="w-4 h-4" />
                         スペース管理
                       </Link>
                       <Link
-                        to="/corporate-dashboard#artworks"
+                        to="/corporate-dashboard#recommended"
                         onClick={handleMobileNavClick}
                         className="flex items-center gap-2 text-gray-600 hover:text-primary transition-colors py-2"
                       >
-                        <Palette className="w-4 h-4" />
-                        展示作品一覧
+                        <Sparkles className="w-4 h-4" />
+                        作品一覧
+                      </Link>
+                      <Link
+                        to="/corporate-dashboard#favorites"
+                        onClick={handleMobileNavClick}
+                        className="flex items-center gap-2 text-gray-600 hover:text-primary transition-colors py-2"
+                      >
+                        <Heart className="w-4 h-4" />
+                        お気に入り
+                      </Link>
+                      <Link
+                        to="/corporate-dashboard#shipping"
+                        onClick={handleMobileNavClick}
+                        className="flex items-center gap-2 text-gray-600 hover:text-primary transition-colors py-2"
+                      >
+                        <Truck className="w-4 h-4" />
+                        配送状況
+                      </Link>
+                      <Link
+                        to="/corporate-dashboard#payment"
+                        onClick={handleMobileNavClick}
+                        className="flex items-center gap-2 text-gray-600 hover:text-primary transition-colors py-2"
+                      >
+                        <Wallet className="w-4 h-4" />
+                        入出金管理
+                      </Link>
+                      <Link
+                        to="/corporate-dashboard#support"
+                        onClick={handleMobileNavClick}
+                        className="flex items-center gap-2 text-gray-600 hover:text-primary transition-colors py-2"
+                      >
+                        <LifeBuoy className="w-4 h-4" />
+                        サポート
                       </Link>
                     </>
                   )}

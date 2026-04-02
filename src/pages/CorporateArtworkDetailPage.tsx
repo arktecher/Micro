@@ -1,14 +1,27 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { motion } from "motion/react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, useNavigate, Link, useLocation } from "react-router-dom";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { ImageWithFallback } from "@/components/common/ImageWithFallback";
 import { ArtworkReturnDialog } from "@/components/ArtworkReturnDialog";
+import { useAuth } from "@/contexts/AuthContext";
+import { useCorporateOrgRole } from "@/hooks/useCorporateOrgRole";
+import { artworkService, type Artwork } from "@/services/artwork.service";
+import {
+  getCorporateDisplayArtworkContext,
+  type CorporateDisplayArtworkContext,
+} from "@/services/space.service";
 import {
   ArrowLeft,
   Eye,
@@ -19,136 +32,281 @@ import {
   Clock,
   Share2,
   ChevronRight,
-  RotateCcw
+  ChevronLeft,
+  RotateCcw,
+  Loader2,
 } from "lucide-react";
+import { toast } from "sonner";
+import { cn } from "@/components/ui/utils";
 
-// モックデータ
-const mockArtworks: Record<number, any> = {
-  1: {
-    id: 1,
-    title: "青の記憶",
-    artist: "山田 花子",
-    artistId: 101,
-    spaceId: 1,
-    spaceName: "1階エントランス",
-    spaceLocation: "東京本社",
-    image: "https://images.unsplash.com/photo-1579541814924-49fef17c5be5?w=800",
-    price: "¥45,000",
-    priceValue: 45000,
-    displayStartDate: "2024年9月1日",
-    displayDays: 45,
-    size: { width: 80.0, height: 60.0 },
-    technique: "アクリル",
-    description: "深い青色を基調とした抽象画。静謐な雰囲気が空間に落ち着きをもたらします。来訪者の記憶に残る印象的な作品です。",
-    tags: ["抽象画", "青系", "落ち着いた"],
-    status: "展示中",
-    hasReturnRequest: true,
-    returnRequestDate: "2024年10月25日",
-    views: 1247,
-    likes: 89,
-    inquiries: 12,
-    soldProbability: 78,
-    estimatedRevenue: 4500,
-  },
-  2: {
-    id: 2,
-    title: "夏の光",
-    artist: "佐藤 太郎",
-    artistId: 102,
-    spaceId: 2,
-    spaceName: "会議室A",
-    spaceLocation: "東京本社",
-    image: "https://images.unsplash.com/photo-1541961017774-22349e4a1262?w=800",
-    price: "¥38,000",
-    priceValue: 38000,
-    displayStartDate: "2024年8月15日",
-    displayDays: 61,
-    size: { width: 72.7, height: 53.0 },
-    technique: "油彩",
-    description: "夏の日差しを抽象的に表現した温かみのある作品。明るい色彩が会議室に活気をもたらします。",
-    tags: ["風景画", "明るい", "暖色系"],
-    status: "展示中",
-    views: 856,
-    likes: 64,
-    inquiries: 8,
-    soldProbability: 65,
-    estimatedRevenue: 3800,
-  },
-  3: {
-    id: 3,
-    title: "静寂の森",
-    artist: "鈴木 美咲",
-    artistId: 103,
-    spaceId: 3,
-    spaceName: "受付",
-    spaceLocation: "東京本社",
-    image: "https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?w=800",
-    price: "¥42,000",
-    priceValue: 42000,
-    displayStartDate: "2024年9月20日",
-    displayDays: 26,
-    size: { width: 60.0, height: 80.0 },
-    technique: "水彩",
-    description: "静かな森の風景を繊細なタッチで描いた作品。来訪者に癒しの空間を提供します。",
-    tags: ["風景画", "自然", "癒し"],
-    status: "展示中",
-    views: 534,
-    likes: 42,
-    inquiries: 5,
-    soldProbability: 52,
-    estimatedRevenue: 4200,
-  }
-};
+function formatJaDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(`${iso.slice(0, 10)}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("ja-JP", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+function formatJaDateTime(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("ja-JP", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
 
 export function CorporateArtworkDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const { isAuthenticated, userType, isInitialized, corporateRole } = useAuth();
+  const { canEdit: canEditCorporate } = useCorporateOrgRole();
+
   const [returnDialogOpen, setReturnDialogOpen] = useState(false);
-  const [artwork, setArtwork] = useState<any>(null);
+  const [galleryIndex, setGalleryIndex] = useState(0);
+  const [ctx, setCtx] = useState<CorporateDisplayArtworkContext | null>(null);
+  const [artwork, setArtwork] = useState<Artwork | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [notOnDisplay, setNotOnDisplay] = useState(false);
 
   useEffect(() => {
-    const artworkId = parseInt(id || "1");
-    const data = mockArtworks[artworkId] || mockArtworks[1];
-    setArtwork(data);
-  }, [id]);
+    if (!isInitialized) return;
+    if (!isAuthenticated || userType !== "corporate") {
+      navigate("/login/corporate", {
+        state: { from: location.pathname },
+        replace: true,
+      });
+    }
+  }, [isInitialized, isAuthenticated, userType, navigate, location.pathname]);
 
-  if (!artwork) {
+  const load = useCallback(async () => {
+    if (!id || !isAuthenticated || userType !== "corporate") return;
+    setLoading(true);
+    setError(null);
+    setNotOnDisplay(false);
+    try {
+      const [c, aw] = await Promise.all([
+        getCorporateDisplayArtworkContext(id),
+        artworkService.getArtwork(id),
+      ]);
+      setCtx(c);
+      setArtwork(aw);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (
+        msg.includes("展示されていません") ||
+        msg.includes("自社のスペースが見つかりません") ||
+        msg.includes("ステータスコード: 404")
+      ) {
+        setNotOnDisplay(true);
+        try {
+          const aw = await artworkService.getArtwork(id);
+          setArtwork(aw);
+        } catch {
+          setArtwork(null);
+        }
+        setCtx(null);
+      } else {
+        setError(msg || "読み込みに失敗しました");
+        setCtx(null);
+        setArtwork(null);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [id, isAuthenticated, userType]);
+
+  useEffect(() => {
+    if (!isInitialized || !isAuthenticated || userType !== "corporate") return;
+    void load();
+  }, [isInitialized, isAuthenticated, userType, load]);
+
+  const mainImage = useMemo(() => {
+    if (!artwork) return "";
+    if (artwork.images?.length) {
+      const sorted = [...artwork.images].sort(
+        (a, b) => a.image_order - b.image_order,
+      );
+      const main = sorted.find((i) => i.is_main) ?? sorted[0];
+      return main?.image_url || artwork.main_image_url || "";
+    }
+    return artwork.main_image_url || "";
+  }, [artwork]);
+
+  /** Ordered URLs for gallery / return dialog primary image */
+  const galleryImageUrls = useMemo(() => {
+    if (!artwork) return [];
+    if (artwork.images?.length) {
+      const sorted = [...artwork.images].sort(
+        (a, b) => a.image_order - b.image_order,
+      );
+      const urls = sorted
+        .map((img) => img.image_url?.trim())
+        .filter((u): u is string => Boolean(u));
+      if (urls.length) return urls;
+    }
+    const m = artwork.main_image_url?.trim();
+    return m ? [m] : [];
+  }, [artwork]);
+
+  useEffect(() => {
+    setGalleryIndex(0);
+  }, [artwork?.id]);
+
+  const priceStr = useMemo(() => {
+    if (!artwork) return "—";
+    const n = Number(artwork.price);
+    if (Number.isNaN(n)) return "—";
+    return `¥${Math.round(n).toLocaleString("ja-JP")}`;
+  }, [artwork]);
+
+  const dimW = Number(artwork?.dimensions?.width) || 0;
+  const dimH = Number(artwork?.dimensions?.height) || 0;
+
+  const handleReturn = () => setReturnDialogOpen(true);
+
+  const handleShare = async () => {
+    if (!id) {
+      toast.error("作品IDを取得できませんでした");
+      return;
+    }
+    const url = `${window.location.origin}/#/artwork/${id}?source=site`;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("作品ページのリンクをコピーしました");
+    } catch {
+      toast.error("コピーに失敗しました");
+    }
+  };
+
+  if (!isInitialized) {
+    return (
+      <div className="flex min-h-screen flex-col bg-gray-50">
+        <Header />
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-4 py-16">
+          <Loader2 className="h-10 w-10 animate-spin text-primary" />
+          <p className="text-sm text-gray-600">初期化中…</p>
+        </div>
+        <div className="mt-auto shrink-0">
+          <Footer />
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated || userType !== "corporate") {
     return null;
   }
 
-  const handleReturn = () => {
-    setReturnDialogOpen(true);
-  };
+  if (loading || (userType === "corporate" && corporateRole === null)) {
+    return (
+      <div className="flex min-h-screen flex-col bg-gray-50">
+        <Header />
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-4 py-16 pt-24">
+          <Loader2 className="h-10 w-10 animate-spin text-primary" />
+          <p className="text-sm text-gray-600">読み込み中…</p>
+        </div>
+        <div className="mt-auto shrink-0">
+          <Footer />
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex min-h-screen flex-col bg-gray-50">
+        <Header />
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="container mx-auto flex min-h-0 flex-1 flex-col items-center justify-center px-4 pb-16 pt-24 text-center max-w-lg">
+            <p className="text-gray-800 mb-4">{error}</p>
+            <Button variant="outline" onClick={() => navigate(-1)}>
+              戻る
+            </Button>
+          </div>
+        </div>
+        <div className="mt-auto shrink-0">
+          <Footer />
+        </div>
+      </div>
+    );
+  }
+
+  if (notOnDisplay) {
+    return (
+      <div className="flex min-h-screen flex-col bg-gray-50">
+        <Header />
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="container mx-auto flex min-h-0 flex-1 flex-col items-center justify-center px-4 pb-16 pt-24 max-w-lg text-center">
+            <p className="text-gray-800 mb-2">
+              この作品は現在、自社のスペースに展示されていません。
+            </p>
+            <p className="text-sm text-gray-600 mb-6">
+              お気に入りやAIおすすめから開いた場合、まだスペースに割り当てていないことがあります。
+            </p>
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <Button variant="outline" onClick={() => navigate("/corporate-dashboard#recommended")}>
+                ダッシュボードへ
+              </Button>
+              {artwork && (
+                <Button onClick={() => navigate(`/artwork/${id}?source=site`)}>
+                  作品ページを見る
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+        <div className="mt-auto shrink-0">
+          <Footer />
+        </div>
+      </div>
+    );
+  }
+
+  if (!ctx || !artwork) {
+    return null;
+  }
+
+  const showArtistRecallBanner =
+    ctx.has_artist_recall_request && ctx.artist_recall_requested_at;
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="flex min-h-screen flex-col bg-gray-50">
       <Header />
 
-      <div className="pt-16 sm:pt-24 pb-16">
-        <div className="container mx-auto px-4 sm:px-6">
-          {/* パンくずリスト */}
-          <div className="mb-6">
-            <nav className="flex items-center gap-2 text-sm text-gray-600">
-              <Link to="/corporate-dashboard" className="hover:text-primary transition-colors">
+      <div className="flex min-h-0 flex-1 flex-col pt-16 sm:pt-24 pb-16">
+        <div className="container mx-auto flex min-h-0 flex-1 flex-col px-4 sm:px-6">
+          <div className="mb-6 flex items-center justify-between gap-3">
+            <nav className="flex min-w-0 flex-1 items-center gap-2 text-sm text-gray-600">
+              <Link
+                to="/corporate-dashboard"
+                className="shrink-0 hover:text-primary transition-colors"
+              >
                 ダッシュボード
               </Link>
-              <ChevronRight className="w-4 h-4" />
-              <span className="text-gray-900 truncate">{artwork.title}</span>
+              <ChevronRight className="w-4 h-4 shrink-0" />
+              <span className="truncate text-gray-900">{artwork.title}</span>
             </nav>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate(-1)}
+              className="h-8 shrink-0 gap-1 px-2 text-xs sm:text-sm"
+            >
+              <ArrowLeft className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              戻る
+            </Button>
           </div>
 
-          {/* 戻るボタン */}
-          <Button
-            variant="ghost"
-            onClick={() => navigate(-1)}
-            className="mb-6"
-          >
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            戻る
-          </Button>
-
-          {/* アーティストからの返却依頼通知 */}
-          {artwork.hasReturnRequest && (
+          {showArtistRecallBanner && (
             <motion.div
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -167,16 +325,23 @@ export function CorporateArtworkDetailPage() {
                         アーティストから返却依頼が来ております
                       </h3>
                       <p className="text-sm text-orange-800 mb-4">
-                        {artwork.artist}様より、{artwork.returnRequestDate}に作品の返却依頼がありました。
-                        返却手続きを進める場合は、下記のボタンより手続きを開始してください。
+                        {artwork.artist?.name ?? "アーティスト"}
+                        様より、
+                        {formatJaDateTime(ctx.artist_recall_requested_at)}
+                        頃に作品の返却依頼がありました。
+                        {canEditCorporate
+                          ? "返却手続きを進める場合は、下記のボタンより手続きを開始してください。"
+                          : "返却手続きは編集者以上の権限をお持ちのメンバーが行えます。"}
                       </p>
-                      <Button
-                        onClick={handleReturn}
-                        className="bg-orange-600 hover:bg-orange-700 text-white gap-2"
-                      >
-                        <RotateCcw className="w-4 h-4" />
-                        返却手続きを進める
-                      </Button>
+                      {canEditCorporate && (
+                        <Button
+                          onClick={handleReturn}
+                          className="bg-orange-600 hover:bg-orange-700 text-white gap-2"
+                        >
+                          <RotateCcw className="w-4 h-4" />
+                          返却手続きを進める
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </CardContent>
@@ -185,23 +350,95 @@ export function CorporateArtworkDetailPage() {
           )}
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
-            {/* 左カラム - 作品画像と基本情報 */}
             <div className="lg:col-span-1 space-y-6">
-              {/* 作品画像 */}
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
               >
-                <Card className="overflow-hidden">
-                  <ImageWithFallback
-                    src={artwork.image}
-                    alt={artwork.title}
-                    className="w-full aspect-[4/5] object-cover"
-                  />
+                <Card className="overflow-hidden p-0">
+                  <div className="relative aspect-[4/5] w-full bg-muted/30">
+                    <ImageWithFallback
+                      src={
+                        galleryImageUrls[galleryIndex] ??
+                        mainImage
+                      }
+                      alt={artwork.title}
+                      className="h-full w-full object-cover"
+                    />
+                    {galleryImageUrls.length > 1 && (
+                      <>
+                        <button
+                          type="button"
+                          aria-label="前の画像"
+                          onClick={() =>
+                            setGalleryIndex((i) =>
+                              i <= 0
+                                ? galleryImageUrls.length - 1
+                                : i - 1,
+                            )
+                          }
+                          className="absolute left-2 top-1/2 z-10 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-gray-200/80 bg-white/90 text-gray-800 shadow-sm backdrop-blur-sm transition hover:bg-white"
+                        >
+                          <ChevronLeft className="h-5 w-5" />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label="次の画像"
+                          onClick={() =>
+                            setGalleryIndex((i) =>
+                              i >= galleryImageUrls.length - 1 ? 0 : i + 1,
+                            )
+                          }
+                          className="absolute right-2 top-1/2 z-10 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-gray-200/80 bg-white/90 text-gray-800 shadow-sm backdrop-blur-sm transition hover:bg-white"
+                        >
+                          <ChevronRight className="h-5 w-5" />
+                        </button>
+                        <div className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 gap-1.5">
+                          {galleryImageUrls.map((_, i) => (
+                            <button
+                              key={i}
+                              type="button"
+                              aria-label={`画像 ${i + 1} を表示`}
+                              aria-current={galleryIndex === i}
+                              onClick={() => setGalleryIndex(i)}
+                              className={cn(
+                                "h-1.5 rounded-full transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-white/80",
+                                galleryIndex === i
+                                  ? "w-5 bg-white shadow-sm"
+                                  : "w-1.5 bg-white/55 hover:bg-white/80",
+                              )}
+                            />
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  {galleryImageUrls.length > 1 && (
+                    <div className="flex gap-2 overflow-x-auto border-t border-gray-100 bg-gray-50/90 p-2">
+                      {galleryImageUrls.map((url, i) => (
+                        <button
+                          key={`${url}-${i}`}
+                          type="button"
+                          onClick={() => setGalleryIndex(i)}
+                          className={cn(
+                            "relative h-14 w-14 shrink-0 overflow-hidden rounded-md border-2 transition-colors",
+                            galleryIndex === i
+                              ? "border-primary ring-1 ring-primary/30"
+                              : "border-transparent opacity-80 hover:opacity-100",
+                          )}
+                        >
+                          <ImageWithFallback
+                            src={url}
+                            alt={`${artwork.title} ${i + 1}`}
+                            className="h-full w-full object-cover"
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </Card>
               </motion.div>
 
-              {/* 基本情報 */}
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -211,60 +448,73 @@ export function CorporateArtworkDetailPage() {
                   <CardHeader>
                     <CardTitle className="text-lg sm:text-xl">{artwork.title}</CardTitle>
                     <CardDescription className="text-base">
-                      {artwork.artist}
+                      {artwork.artist?.name ?? "—"}
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-gray-600">価格</span>
-                      <span className="text-xl sm:text-2xl text-primary">{artwork.price}</span>
+                      <span className="text-xl sm:text-2xl text-primary">{priceStr}</span>
+                    </div>
+                    <Separator />
+                    <div className="space-y-2">
+                      {(dimW > 0 || dimH > 0) && (
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-gray-600">サイズ</span>
+                          <span className="text-gray-900">
+                            {dimW} × {dimH} cm
+                          </span>
+                        </div>
+                      )}
+                      {artwork.medium && (
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-gray-600">技法</span>
+                          <span className="text-gray-900">{artwork.medium}</span>
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-600">展示ステータス</span>
+                        <Badge variant="default">{ctx.pipeline_label}</Badge>
+                      </div>
                     </div>
                     <Separator />
                     <div className="space-y-2">
                       <div className="flex items-center justify-between text-sm">
-                        <span className="text-gray-600">サイズ</span>
-                        <span className="text-gray-900">{artwork.size.width} × {artwork.size.height} cm</span>
-                      </div>
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-gray-600">技法</span>
-                        <span className="text-gray-900">{artwork.technique}</span>
-                      </div>
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-gray-600">ステータス</span>
-                        <Badge variant="default">{artwork.status}</Badge>
-                      </div>
-                    </div>
-                    <Separator />
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between text-sm">
-                        <div className="flex items-center gap-2">
-                          <MapPin className="w-4 h-4 text-gray-500" />
-                          <span className="text-gray-900">{artwork.spaceName}</span>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <MapPin className="w-4 h-4 text-gray-500 shrink-0" />
+                          <span className="text-gray-900 truncate">{ctx.space_name}</span>
                         </div>
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => navigate(`/corporate-space/${artwork.spaceId}`)}
-                          className="text-xs h-7"
+                          onClick={() => navigate(`/corporate-space/${ctx.space_id}`)}
+                          className="text-xs h-7 shrink-0"
                         >
                           スペース詳細
                           <ChevronRight className="w-3 h-3 ml-1" />
                         </Button>
                       </div>
+                      {ctx.facility_type && (
+                        <p className="text-xs text-gray-500 pl-6">{ctx.facility_type}</p>
+                      )}
+                      {ctx.space_address && (
+                        <p className="text-xs text-gray-600 pl-6">{ctx.space_address}</p>
+                      )}
                       <div className="flex items-center gap-2 text-sm">
                         <Calendar className="w-4 h-4 text-gray-500" />
-                        <span className="text-gray-900">展示開始: {artwork.displayStartDate}</span>
+                        <span className="text-gray-900">
+                          展示開始: {formatJaDate(ctx.display_start_date)}
+                        </span>
                       </div>
                       <div className="flex items-center gap-2 text-sm">
                         <Clock className="w-4 h-4 text-gray-500" />
-                        <span className="text-gray-900">展示日数: {artwork.displayDays}日</span>
+                        <span className="text-gray-900">展示日数: {ctx.display_days}日</span>
                       </div>
                     </div>
                   </CardContent>
                 </Card>
               </motion.div>
 
-              {/* アクション */}
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -275,26 +525,32 @@ export function CorporateArtworkDetailPage() {
                     <CardTitle className="text-base">アクション</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    <Button
-                      variant="destructive"
-                      className="w-full"
-                      onClick={handleReturn}
-                    >
-                      <RotateCcw className="w-4 h-4 mr-2" />
-                      返却する
-                    </Button>
+                    {canEditCorporate && (
+                      <>
+                        <Button
+                          variant="destructive"
+                          className="w-full"
+                          onClick={handleReturn}
+                        >
+                          <RotateCcw className="w-4 h-4 mr-2" />
+                          返却する
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="w-full"
+                          onClick={() =>
+                            navigate(`/artwork-issue-report/${ctx.space_id}`)
+                          }
+                        >
+                          <AlertCircle className="w-4 h-4 mr-2" />
+                          問題を報告
+                        </Button>
+                      </>
+                    )}
                     <Button
                       variant="outline"
                       className="w-full"
-                      onClick={() => navigate(`/artwork-issue-report/${artwork.id}`)}
-                    >
-                      <AlertCircle className="w-4 h-4 mr-2" />
-                      問題を報告
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      onClick={() => {/* TODO: Share functionality */}}
+                      onClick={handleShare}
                     >
                       <Share2 className="w-4 h-4 mr-2" />
                       共有
@@ -304,9 +560,26 @@ export function CorporateArtworkDetailPage() {
               </motion.div>
             </div>
 
-            {/* 右カラム - QR閲覧数と返却情報 */}
             <div className="lg:col-span-2 space-y-6">
-              {/* QR閲覧数 */}
+              {artwork.description && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.05 }}
+                >
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">作品について</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+                        {artwork.description}
+                      </p>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              )}
+
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -319,27 +592,28 @@ export function CorporateArtworkDetailPage() {
                       QR閲覧数
                     </CardTitle>
                     <CardDescription>
-                      この作品が何回見られているか
+                      このスペースのQRからこの作品が何回閲覧されたか（展示期間内）
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div className="bg-gradient-to-br from-[#C3A36D]/10 to-[#D4745E]/10 rounded-lg p-6 text-center">
                       <p className="text-4xl sm:text-5xl text-primary mb-2">
-                        {artwork.views.toLocaleString()}
+                        {ctx.qr_scan_count.toLocaleString("ja-JP")}
                       </p>
-                      <p className="text-sm text-gray-600">
-                        回閲覧されました
-                      </p>
+                      <p className="text-sm text-gray-600">回（QRスキャン）</p>
                     </div>
+                    <p className="text-xs text-gray-500 mt-3 text-center">
+                      カタログ上の閲覧数: {ctx.view_count.toLocaleString("ja-JP")}{" "}
+                      / お気に入り: {ctx.favorite_count.toLocaleString("ja-JP")}
+                    </p>
                   </CardContent>
                 </Card>
               </motion.div>
 
-              {/* 返却ポリシー */}
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2 }}
+                transition={{ delay: 0.15 }}
               >
                 <Card className="border-[#C3A36D]/30 bg-[#F8F6F1]/50">
                   <CardHeader>
@@ -349,25 +623,35 @@ export function CorporateArtworkDetailPage() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3 text-sm">
+                    <p className="text-xs text-gray-600">{ctx.pipeline_detail}</p>
                     <div className="flex items-start gap-3">
-                      <div className={`w-2 h-2 rounded-full mt-1.5 ${artwork.displayDays >= 180 ? 'bg-green-500' : 'bg-orange-500'}`} />
+                      <div
+                        className={`w-2 h-2 rounded-full mt-1.5 ${ctx.display_days >= 180 ? "bg-green-500" : "bg-orange-500"}`}
+                      />
                       <div className="flex-1">
                         <p className="text-gray-900 mb-1">
-                          {artwork.displayDays >= 180 ? (
-                            <span className="text-green-700">✓ 返却送料：無料（展示期間6ヶ月以上）</span>
+                          {ctx.shipping_cost_bearer === "artist" ? (
+                            <span className="text-green-700">
+                              ✓ 返却送料：無料（展示期間6ヶ月以上）
+                            </span>
                           ) : (
-                            <span className="text-orange-700">返却送料：法人負担（展示期間6ヶ月未満）</span>
+                            <span className="text-orange-700">
+                              返却送料：法人負担（展示期間6ヶ月未満）
+                            </span>
                           )}
                         </p>
                         <p className="text-gray-600 text-xs">
-                          現在の展示日数: {artwork.displayDays}日 
-                          {artwork.displayDays < 180 && ` / あと${180 - artwork.displayDays}日で無料`}
+                          現在の展示日数: {ctx.display_days}日
+                          {ctx.display_days < 180 &&
+                            ` / あと${180 - ctx.display_days}日で無料`}
                         </p>
                       </div>
                     </div>
-                    <p className="text-gray-600 text-xs">
-                      返却ボタンを押すだけで、MGJが返却ラベルを発行し、配送業者の集荷手配を行います。
-                    </p>
+                    {canEditCorporate && (
+                      <p className="text-gray-600 text-xs">
+                        返却ボタンを押すだけで、MGJが返却ラベルを発行し、配送業者の集荷手配を行います。
+                      </p>
+                    )}
                   </CardContent>
                 </Card>
               </motion.div>
@@ -376,23 +660,29 @@ export function CorporateArtworkDetailPage() {
         </div>
       </div>
 
-      <Footer />
+      <div className="mt-auto shrink-0">
+        <Footer />
+      </div>
 
-      {/* 返却ダイアログ */}
+      {canEditCorporate && (
       <ArtworkReturnDialog
         open={returnDialogOpen}
         onOpenChange={setReturnDialogOpen}
-        artwork={artwork ? {
+        spaceId={ctx.space_id}
+        onSuccess={load}
+        artwork={{
           id: artwork.id,
           title: artwork.title,
-          artist: artwork.artist,
-          image: artwork.image,
-          displayedSince: artwork.displayStartDate,
-          location: artwork.spaceName,
-          price: artwork.price
-        } : null}
+          artist: artwork.artist?.name ?? "—",
+          image: mainImage,
+          displayedSince: ctx.display_start_date
+            ? `${ctx.display_start_date}T12:00:00.000Z`
+            : new Date().toISOString(),
+          location: ctx.space_name,
+          price: priceStr,
+        }}
       />
+      )}
     </div>
   );
 }
-

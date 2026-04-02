@@ -1,8 +1,8 @@
 import type { Artwork, ArtworkFilters } from "@/types/artwork";
 import { PRICE_RANGES } from "@/data/artworks";
 
-// Technique mapping for filtering
-const TECHNIQUE_MAP: Record<string, string> = {
+/** Maps filter control ids to medium strings stored in DB / shown in UI */
+export const TECHNIQUE_MAP: Record<string, string> = {
   acrylic: "アクリル",
   oil: "油彩",
   spray: "スプレー",

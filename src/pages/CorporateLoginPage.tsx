@@ -1,6 +1,6 @@
 import { motion } from "motion/react";
 import { useState, useEffect } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, useLocation, Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Building2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import { api } from "@/lib/api";
 
 export function CorporateLoginPage() {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { login, refreshCorporateRole } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -60,8 +60,11 @@ export function CorporateLoginPage() {
         email: response.user.email,
       });
 
+      await refreshCorporateRole();
+
       toast.success("ログインしました");
-      navigate("/corporate-dashboard");
+      const from = (location.state as { from?: string } | null)?.from;
+      navigate(from && from.startsWith("/") ? from : "/corporate-dashboard");
     } catch (error: any) {
       console.error("Login error:", error);
       toast.error("ログインに失敗しました", {

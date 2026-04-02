@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useRefreshOnInterval } from "@/hooks/useRefreshOnInterval";
 import { useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -30,6 +31,7 @@ import {
   X,
   ChevronDown,
   ChevronUp,
+  AlertTriangle,
 } from "lucide-react";
 
 import { useAuth } from "@/contexts/AuthContext";
@@ -48,9 +50,19 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { ArtistReturnRequestDialog } from "@/components/ArtistReturnRequestDialog";
-import { artistService, type ArtistProfile } from "@/services/artist.service";
+import {
+  artistService,
+  type ArtistProfile,
+  type ArtistStatistics,
+  type RevenueAnalytics,
+} from "@/services/artist.service";
 import { userService } from "@/services/user.service";
-import { artworkService, type Artwork as ArtworkAPI } from "@/services/artwork.service";
+import {
+  artworkService,
+  type Artwork as ArtworkAPI,
+  type ArtistArtworkStatusCounts,
+  isArtworkInTransitFamily,
+} from "@/services/artwork.service";
 import { toast } from "sonner";
 import { ImageWithFallback } from "@/components/common/ImageWithFallback";
 import {
@@ -64,121 +76,19 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-// モックデータ
-const mockStats = {
-  publishedArtworks: 12,
-  exhibitedArtworks: 3,
-  soldArtworks: 2,
-  monthlyRevenue: 160000,
-  totalScans: 124,
-  monthlyScans: 45,
-};
+/**
+ * 作品タブのステータスフィルターID。
+ * `in_transit_unified` = 輸送中（展示先へ向かう途中・法人からの返送・回収など、すべて「途中」の脚をまとめる）。
+ * 一覧APIは当面 `status=in_transit` を流用。将来バックエンドで専用クエリに差し替え予定。
+ */
+const ARTWORK_FILTER_IN_TRANSIT_UNIFIED = "in_transit_unified" as const;
 
-const mockArtworks = [
-  {
-    id: "1",
-    name: "夏の思い出",
-    status: "exhibited",
-    price: 50000,
-    location: "The Tokyo Hotel",
-    scans: 23,
-    exhibitStart: "2024-12-01",
-    hasImage: true,
-    isVideo: false,
-    tags: ["風景", "モダン"],
-  },
-  {
-    id: "2",
-    name: "都市の夜",
-    status: "exhibited",
-    price: 80000,
-    location: "渋谷オフィスビル",
-    scans: 18,
-    exhibitStart: "2024-11-15",
-    hasImage: true,
-    isVideo: false,
-    tags: ["都市", "抽象"],
-  },
-  {
-    id: "3",
-    name: "静寂",
-    status: "published",
-    price: 120000,
-    scans: 34,
-    hasImage: true,
-    isVideo: true,
-    tags: ["抽象", "モダン"],
-  },
-  {
-    id: "4",
-    name: "朝の光",
-    status: "published",
-    price: 65000,
-    scans: 12,
-    hasImage: true,
-    isVideo: false,
-    tags: ["風景"],
-  },
-  {
-    id: "5",
-    name: "冬の詩",
-    status: "sold",
-    price: 95000,
-    soldDate: "2024-10-20",
-    buyer: "株式会社ABC",
-    paymentStatus: "paid",
-    hasImage: true,
-    isVideo: false,
-    tags: ["風景", "季節"],
-  },
-  {
-    id: "6",
-    name: "記憶の断片",
-    status: "returned",
-    price: 70000,
-    exhibitEnd: "2024-10-31",
-    hasImage: true,
-    isVideo: false,
-    tags: ["抽象"],
-  },
-  {
-    id: "7",
-    name: "春の訪れ",
-    status: "draft",
-    price: 55000,
-    hasImage: true,
-    isVideo: false,
-    tags: ["風景", "季節"],
-  },
-  {
-    id: "8",
-    name: "都会の静寂",
-    status: "draft",
-    price: 75000,
-    hasImage: true,
-    isVideo: false,
-    tags: ["都市", "夜景"],
-  },
-];
+/** Corporate return flow (artist view) — map to GET /artworks status + status-counts. */
+const ARTWORK_FILTER_RETURN_REQUESTED = "return_requested" as const;
+const ARTWORK_FILTER_RETURNED_TO_ARTIST = "returned_to_artist" as const;
 
-const mockSalesHistory = [
-  { month: "2024-10", revenue: 95000, count: 1 },
-  { month: "2024-09", revenue: 65000, count: 1 },
-  { month: "2024-08", revenue: 0, count: 0 },
-  { month: "2024-07", revenue: 120000, count: 2 },
-];
-
-const mockProfile = {
-  name: "山田太郎",
-  birthDate: "1995-04-15",
-  email: "yamada@example.com",
-  phone: "090-1234-5678",
-  bio: "自然と都市の対比をテーマに作品を制作しています。色彩と光の表現を大切にしながら、見る人の心に響く作品づくりを心がけています。",
-  career: "2020年 東京藝術大学卒業\n2021年 新人賞受賞\n2022年 個展開催（銀座）",
-  instagram: "@yamada_art",
-  twitter: "@yamada_artist",
-  website: "https://yamada-art.com",
-};
+/** Artist-initiated recall — awaiting corporate ship only (on-the-way recall leg is under 輸送中). */
+const ARTWORK_FILTER_RECALL_REQUESTED = "recall_requested" as const;
 
 const statusConfig = {
   draft: {
@@ -202,6 +112,42 @@ const statusConfig = {
     borderColor: "border-[#C3A36D]/30",
     textColor: "text-[#C3A36D]",
   },
+  exhibition_requested: {
+    label: "展示依頼中",
+    color: "bg-orange-600",
+    bgColor: "bg-orange-50",
+    borderColor: "border-orange-300",
+    textColor: "text-orange-900",
+  },
+  /** 輸送中（展示先へ向かう途中など）。返送・回収の細分化は `listBadgeConfig` + `in_transit_kind` */
+  [ARTWORK_FILTER_IN_TRANSIT_UNIFIED]: {
+    label: "輸送中",
+    color: "bg-violet-600",
+    bgColor: "bg-violet-50",
+    borderColor: "border-violet-300",
+    textColor: "text-violet-900",
+  },
+  [ARTWORK_FILTER_RETURN_REQUESTED]: {
+    label: "返却申請中",
+    color: "bg-teal-600",
+    bgColor: "bg-teal-50",
+    borderColor: "border-teal-300",
+    textColor: "text-teal-900",
+  },
+  [ARTWORK_FILTER_RETURNED_TO_ARTIST]: {
+    label: "アーティストに返却済み",
+    color: "bg-slate-600",
+    bgColor: "bg-slate-50",
+    borderColor: "border-slate-300",
+    textColor: "text-slate-800",
+  },
+  [ARTWORK_FILTER_RECALL_REQUESTED]: {
+    label: "回収依頼中",
+    color: "bg-rose-600",
+    bgColor: "bg-rose-50",
+    borderColor: "border-rose-300",
+    textColor: "text-rose-900",
+  },
   sold: {
     label: "売却済み",
     color: "bg-blue-500",
@@ -224,6 +170,76 @@ const statusConfig = {
     textColor: "text-gray-700",
   },
 };
+
+type StatusCardConfig = (typeof statusConfig)[keyof typeof statusConfig];
+
+/**
+ * Card badge: DB `artwork.status` is granular; labels align with dashboard filter chips.
+ */
+function listBadgeConfig(artwork: {
+  status: string;
+  in_transit_kind?: string | null;
+  artist_pipeline_kind?: string | null;
+}): StatusCardConfig {
+  if (artwork.artist_pipeline_kind === "corporate_return_pending") {
+    return statusConfig[ARTWORK_FILTER_RETURN_REQUESTED];
+  }
+  const s = artwork.status;
+  if (s === "recall_pending") {
+    return statusConfig[ARTWORK_FILTER_RECALL_REQUESTED];
+  }
+  if (s === "in_transit_corporate_return") {
+    return {
+      label: "法人からの返送中",
+      color: "bg-violet-600",
+      bgColor: "bg-violet-50",
+      borderColor: "border-violet-300",
+      textColor: "text-violet-900",
+    };
+  }
+  if (s === "in_transit_recall") {
+    return {
+      label: "回収返送中",
+      color: "bg-rose-600",
+      bgColor: "bg-rose-50",
+      borderColor: "border-rose-300",
+      textColor: "text-rose-900",
+    };
+  }
+  if (isArtworkInTransitFamily(s)) {
+    return statusConfig[ARTWORK_FILTER_IN_TRANSIT_UNIFIED];
+  }
+  if (s === "returned_corporate" || s === "returned_recall") {
+    return statusConfig[ARTWORK_FILTER_RETURNED_TO_ARTIST];
+  }
+  if (s === "withdrawn") {
+    return {
+      label: "取り下げ",
+      color: "bg-gray-500",
+      bgColor: "bg-gray-50",
+      borderColor: "border-gray-200",
+      textColor: "text-gray-700",
+    };
+  }
+  const key = artwork.status as keyof typeof statusConfig;
+  return statusConfig[key] ?? statusConfig.draft;
+}
+
+/** Numeric badge for status filter chips (aligned with GET /artworks/me/status-counts). */
+function FilterChipCount({ n, active }: { n: number; active: boolean }) {
+  const display = n > 99 ? "99+" : String(n);
+  return (
+    <span
+      className={
+        active
+          ? "ml-1.5 inline-flex min-w-[1.25rem] h-5 items-center justify-center rounded-full bg-white/25 px-1 text-[10px] font-semibold tabular-nums text-white"
+          : "ml-1.5 inline-flex min-w-[1.25rem] h-5 items-center justify-center rounded-full bg-gray-100 px-1 text-[10px] font-semibold tabular-nums text-gray-700"
+      }
+    >
+      {display}
+    </span>
+  );
+}
 
 export function ArtistDashboard() {
   const navigate = useNavigate();
@@ -306,7 +322,24 @@ export function ArtistDashboard() {
   
   // Carousel state for each artwork (key: artwork.id, value: { currentIndex, isAutoPlaying, isHovering })
   const [artworkCarousels, setArtworkCarousels] = useState<Map<string, { currentIndex: number; isAutoPlaying: boolean; isHovering: boolean }>>(new Map());
-  
+  /** Open / investigating issue report counts per artwork (法人からの不具合報告) */
+  const [issueOpenCounts, setIssueOpenCounts] = useState<Record<string, number>>({});
+  /** Per status chip counts (GET /artworks/me/status-counts); loaded with artwork list + dashboard bootstrap */
+  const [statusCounts, setStatusCounts] = useState<ArtistArtworkStatusCounts | null>(null);
+  /** GET /artists/me/statistics — dashboard + QR + revenue summary */
+  const [artistStatistics, setArtistStatistics] = useState<ArtistStatistics | null>(null);
+  const [isLoadingDashboardStats, setIsLoadingDashboardStats] = useState(false);
+  /** GET /artists/me/analytics/revenue — revenue tab charts & sold list */
+  const [revenueAnalytics, setRevenueAnalytics] = useState<RevenueAnalytics | null>(null);
+  const [revenueAnalyticsLoading, setRevenueAnalyticsLoading] = useState(false);
+
+  // 旧「回収済み」フィルター（returned）が状態に残っている場合はすべてに戻す
+  useEffect(() => {
+    if (selectedTab !== "artworks" || artworkFilter !== "returned") return;
+    setArtworkFilter("all");
+    setArtworkPage(1);
+  }, [selectedTab, artworkFilter]);
+
   // Debounced search state - must be defined before useEffect that uses it
   const [debouncedSearch, setDebouncedSearch] = useState("");
   
@@ -321,6 +354,12 @@ export function ArtistDashboard() {
     career: "",
     instagram: "",
     website: "",
+    shipping_postal_code: "",
+    shipping_prefecture: "",
+    shipping_city: "",
+    shipping_street_address: "",
+    shipping_building_name: "",
+    shipping_phone: "",
   });
   // Track original profile data to detect changes
   const [originalProfileData, setOriginalProfileData] = useState({
@@ -330,6 +369,12 @@ export function ArtistDashboard() {
     career: "",
     instagram: "",
     website: "",
+    shipping_postal_code: "",
+    shipping_prefecture: "",
+    shipping_city: "",
+    shipping_street_address: "",
+    shipping_building_name: "",
+    shipping_phone: "",
   });
   const [userProfile, setUserProfile] = useState<any>(null);
 
@@ -352,6 +397,53 @@ export function ArtistDashboard() {
       return;
     }
   }, [isAuthenticated, userType, isInitialized, navigate]);
+
+  // Dashboard / global stats: align with API (not mock data)
+  useEffect(() => {
+    if (!isInitialized || !isAuthenticated || userType !== "artist") return;
+    let cancelled = false;
+    setIsLoadingDashboardStats(true);
+    Promise.all([
+      artistService.getStatistics(),
+      artworkService.getMyArtworkStatusCounts().catch(() => null),
+    ])
+      .then(([stats, counts]) => {
+        if (cancelled) return;
+        setArtistStatistics(stats);
+        if (counts) setStatusCounts(counts);
+      })
+      .catch((err) => {
+        console.error("Artist dashboard statistics:", err);
+        toast.error("統計情報の読み込みに失敗しました");
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingDashboardStats(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isInitialized, isAuthenticated, userType]);
+
+  useEffect(() => {
+    if (selectedTab !== "revenue" || userType !== "artist" || !isAuthenticated) return;
+    let cancelled = false;
+    setRevenueAnalyticsLoading(true);
+    artistService
+      .getRevenueAnalytics("monthly")
+      .then((data) => {
+        if (!cancelled) setRevenueAnalytics(data);
+      })
+      .catch((err) => {
+        console.error("Revenue analytics:", err);
+        toast.error("収益データの読み込みに失敗しました");
+      })
+      .finally(() => {
+        if (!cancelled) setRevenueAnalyticsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedTab, userType, isAuthenticated]);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -451,9 +543,12 @@ export function ArtistDashboard() {
       params.set("page_size", String(artworkPageSize));
     }
 
-    // Status filter
+    // Status filter（輸送中は URL では in_transit_unified）
     if (artworkFilter && artworkFilter !== "all") {
-      const statusParam = artworkFilter === "returned" ? "recalled" : artworkFilter;
+      const statusParam =
+        artworkFilter === ARTWORK_FILTER_IN_TRANSIT_UNIFIED
+          ? ARTWORK_FILTER_IN_TRANSIT_UNIFIED
+          : artworkFilter;
       params.set("status", statusParam);
     }
 
@@ -579,12 +674,35 @@ export function ArtistDashboard() {
 
     const statusParam = params.get("status");
     if (statusParam) {
+      const legacyTransit =
+        statusParam === "on_the_way" ||
+        statusParam === "in_transit_to_corporate" ||
+        statusParam === "in_transit_return" ||
+        statusParam === "return_in_transit" ||
+        statusParam === "recall_in_transit";
       const filter =
-        statusParam === "recalled" ? "returned" : statusParam;
+        statusParam === "recalled"
+          ? "all"
+          : statusParam === "recall_returned_to_artist"
+            ? ARTWORK_FILTER_RETURNED_TO_ARTIST
+            : legacyTransit ||
+                statusParam === "in_transit" ||
+                statusParam === "in_transit_unified"
+              ? ARTWORK_FILTER_IN_TRANSIT_UNIFIED
+              : statusParam;
       if (
-        ["all", "draft", "published", "exhibited", "sold", "returned"].includes(
-          filter
-        )
+        [
+          "all",
+          "draft",
+          "published",
+          "exhibition_requested",
+          "exhibited",
+          ARTWORK_FILTER_IN_TRANSIT_UNIFIED,
+          ARTWORK_FILTER_RETURN_REQUESTED,
+          ARTWORK_FILTER_RETURNED_TO_ARTIST,
+          ARTWORK_FILTER_RECALL_REQUESTED,
+          "sold",
+        ].includes(filter)
       ) {
         setArtworkFilter(filter);
       }
@@ -674,7 +792,13 @@ export function ArtistDashboard() {
       profileFormData.biography !== originalProfileData.biography ||
       profileFormData.career !== originalProfileData.career ||
       profileFormData.instagram !== originalProfileData.instagram ||
-      profileFormData.website !== originalProfileData.website
+      profileFormData.website !== originalProfileData.website ||
+      profileFormData.shipping_postal_code !== originalProfileData.shipping_postal_code ||
+      profileFormData.shipping_prefecture !== originalProfileData.shipping_prefecture ||
+      profileFormData.shipping_city !== originalProfileData.shipping_city ||
+      profileFormData.shipping_street_address !== originalProfileData.shipping_street_address ||
+      profileFormData.shipping_building_name !== originalProfileData.shipping_building_name ||
+      profileFormData.shipping_phone !== originalProfileData.shipping_phone
     );
   };
 
@@ -707,6 +831,9 @@ export function ArtistDashboard() {
       return;
     }
 
+    const isInTransitUnifiedFilter =
+      artworkFilter === ARTWORK_FILTER_IN_TRANSIT_UNIFIED;
+
     setIsLoadingArtworks(true);
     try {
       // Build filter parameters from filter state
@@ -718,7 +845,17 @@ export function ArtistDashboard() {
 
       // Status filter (from artworkFilter state)
       if (artworkFilter !== "all") {
-        filterParams.status = artworkFilter === "returned" ? "recalled" : artworkFilter;
+        if (isInTransitUnifiedFilter) {
+          filterParams.status = "in_transit_unified";
+        } else if (artworkFilter === ARTWORK_FILTER_RETURN_REQUESTED) {
+          filterParams.status = "return_requested";
+        } else if (artworkFilter === ARTWORK_FILTER_RETURNED_TO_ARTIST) {
+          filterParams.status = "returned_to_artist";
+        } else if (artworkFilter === ARTWORK_FILTER_RECALL_REQUESTED) {
+          filterParams.status = "recall_requested";
+        } else {
+          filterParams.status = artworkFilter;
+        }
       }
 
       // Search query
@@ -834,8 +971,17 @@ export function ArtistDashboard() {
       filterParams.sort_by = filters.sortBy;
       filterParams.sort_order = filters.sortOrder;
 
-      // Fetch artworks with filters
-      const response = await artworkService.listArtworks(filterParams);
+      // Fetch artworks + open issue summary + status chip counts in parallel
+      const [response, issueSummary, counts] = await Promise.all([
+        artworkService.listArtworks(filterParams),
+        artworkService
+          .getOpenIssueReportSummary()
+          .catch((): { counts: Record<string, number> } => ({ counts: {} })),
+        artworkService.getMyArtworkStatusCounts().catch(() => null),
+      ]);
+
+      setIssueOpenCounts(issueSummary.counts ?? {});
+      if (counts) setStatusCounts(counts);
 
       // Map API response to match the expected format
       const mappedArtworks = response.items.map((artwork: ArtworkAPI) => {
@@ -850,8 +996,11 @@ export function ArtistDashboard() {
           id: artwork.id,
           name: artwork.title,
           status: artwork.status,
+          in_transit_kind: artwork.in_transit_kind ?? null,
+          artist_pipeline_kind: artwork.artist_pipeline_kind ?? null,
           price: Number(artwork.price),
           location: undefined, // Will be populated from space assignments later
+          // API view_count = 作品ページ閲覧数（DBの実データ）。QR専用スキャン数ではない
           scans: artwork.view_count || 0,
           exhibitStart: undefined, // Will be populated from space assignments later
           hasImage: !!artwork.main_image_url,
@@ -884,11 +1033,21 @@ export function ArtistDashboard() {
       console.error("Failed to load artworks:", error);
       toast.error("作品の読み込みに失敗しました");
       setArtworks([]);
+      setIssueOpenCounts({});
     } finally {
       setIsLoadingArtworks(false);
     }
   };
-  
+
+  useRefreshOnInterval(
+    () => {
+      if (selectedTab !== "artworks" || !currentUser?.id) return;
+      void loadArtworks();
+    },
+    selectedTab === "artworks" && Boolean(currentUser?.id),
+    45_000,
+  );
+
   // Auto-play carousel for each artwork
   useEffect(() => {
     const intervals: Map<string, NodeJS.Timeout> = new Map();
@@ -1004,6 +1163,7 @@ export function ArtistDashboard() {
         ? artistProfile.career_history.map((entry) => `${entry.year} ${entry.content}`).join("\n")
         : "";
       
+      const sa = artistProfile.shipping_address;
       const formData = {
         name: artistProfile.name || "",
         phone_number: artistProfile.phone_number || "",
@@ -1011,6 +1171,12 @@ export function ArtistDashboard() {
         career: careerText,
         instagram: "",
         website: "",
+        shipping_postal_code: sa?.postal_code ?? "",
+        shipping_prefecture: sa?.prefecture ?? "",
+        shipping_city: sa?.city ?? "",
+        shipping_street_address: sa?.street_address ?? "",
+        shipping_building_name: sa?.building_name ?? "",
+        shipping_phone: sa?.phone ?? "",
       };
       
       // Load user profile for SNS links
@@ -1102,7 +1268,37 @@ export function ArtistDashboard() {
   const handleSaveProfile = async () => {
     try {
       setIsSavingProfile(true);
-      
+
+      const shippingRequired = [
+        profileFormData.shipping_postal_code,
+        profileFormData.shipping_prefecture,
+        profileFormData.shipping_city,
+        profileFormData.shipping_street_address,
+      ];
+      const anyShippingFilled = [
+        ...shippingRequired,
+        profileFormData.shipping_building_name,
+        profileFormData.shipping_phone,
+      ].some((v) => (v || "").trim().length > 0);
+      const allShippingRequiredFilled = shippingRequired.every(
+        (v) => (v || "").trim().length > 0
+      );
+      if (anyShippingFilled && !allShippingRequiredFilled) {
+        toast.error(
+          "配送・返送先は、郵便番号・都道府県・市区町村・番地をすべて入力するか、すべて空にしてください。"
+        );
+        setIsSavingProfile(false);
+        return;
+      }
+
+      if (allShippingRequiredFilled && !profileFormData.name.trim()) {
+        toast.error(
+          "配送先を保存するには、先に「名前（公開名）」を入力してください（宛名として使用されます）。"
+        );
+        setIsSavingProfile(false);
+        return;
+      }
+
       // Parse career text into array format
       const careerHistory = profileFormData.career
         ? profileFormData.career
@@ -1138,7 +1334,18 @@ export function ArtistDashboard() {
         console.warn("Failed to update SNS links:", err);
         toast.error("SNSリンクの更新に失敗しました");
       }
-      
+
+      if (allShippingRequiredFilled) {
+        await artistService.upsertShippingAddress({
+          postal_code: profileFormData.shipping_postal_code.trim(),
+          prefecture: profileFormData.shipping_prefecture.trim(),
+          city: profileFormData.shipping_city.trim(),
+          street_address: profileFormData.shipping_street_address.trim(),
+          building_name: profileFormData.shipping_building_name?.trim() || null,
+          phone: profileFormData.shipping_phone?.trim() || null,
+        });
+      }
+
       // Reload profile data to get updated values (including SNS links)
       await loadProfileData();
       
@@ -1154,7 +1361,24 @@ export function ArtistDashboard() {
   // Artworks are already filtered by the backend API, so we can use them directly
   const filteredArtworks = artworks;
 
-  const exhibitedArtworks = artworks.filter((a) => a.status === "exhibited");
+  const publishedCount =
+    statusCounts?.published ?? artistStatistics?.artwork_counts.published ?? 0;
+  const exhibitedCount =
+    statusCounts?.exhibited ?? artistStatistics?.artwork_counts.exhibited ?? 0;
+  const soldCount = statusCounts?.sold ?? artistStatistics?.artwork_counts.sold ?? 0;
+  const monthlyRevenue = artistStatistics?.revenue.monthly ?? 0;
+  const totalRevenueAll = artistStatistics?.revenue.total ?? 0;
+  const qrTotal = artistStatistics?.qr_scans.total ?? 0;
+  const qrMonthly = artistStatistics?.qr_scans.monthly ?? 0;
+  const qrTopLocations = artistStatistics?.qr_top_locations ?? [];
+  const qrMonthlyPercent =
+    qrTotal > 0 ? Math.min(100, Math.round((qrMonthly / qrTotal) * 100)) : 0;
+
+  const revenueByMonth = revenueAnalytics?.revenue_by_period ?? [];
+  const maxMonthRev = Math.max(
+    ...revenueByMonth.map((r) => r.revenue),
+    1,
+  );
 
   const handleRequestReturn = (artwork: any, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -1363,10 +1587,12 @@ export function ArtistDashboard() {
           <h1 className="text-2xl sm:text-3xl md:text-4xl text-[#3A3A3A] mb-2 sm:mb-3">
             {profileData?.name || profileFormData.name || "アーティスト"}さんのマイページ
           </h1>
-          <p className="text-sm sm:text-base md:text-lg text-gray-600 flex items-center gap-2 flex-wrap">
+            <p className="text-sm sm:text-base md:text-lg text-gray-600 flex items-center gap-2 flex-wrap">
             <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-[#C3A36D] flex-shrink-0" />
             <span>
-              公開中の作品は{mockStats.publishedArtworks}点、展示中の作品は{mockStats.exhibitedArtworks}点です
+              {isLoadingDashboardStats
+                ? "統計を読み込み中…"
+                : `公開中の作品は${publishedCount}点、展示中の作品は${exhibitedCount}点です`}
             </span>
           </p>
         </motion.div>
@@ -1421,7 +1647,7 @@ export function ArtistDashboard() {
                       <Eye className="w-8 h-8 text-green-500" />
                       <Badge className="bg-green-500 text-white">オンライン公開中</Badge>
                     </div>
-                    <p className="text-3xl text-[#3A3A3A] mb-1">{mockStats.publishedArtworks}点</p>
+                    <p className="text-3xl text-[#3A3A3A] mb-1">{publishedCount}点</p>
                     <p className="text-sm text-gray-600">オンライン公開中の作品</p>
                   </CardContent>
                 </Card>
@@ -1438,11 +1664,12 @@ export function ArtistDashboard() {
                       <Building2 className="w-8 h-8 text-[#C3A36D]" />
                       <Badge className="bg-[#C3A36D] text-white">展示中</Badge>
                     </div>
-                    <p className="text-3xl text-[#3A3A3A] mb-1">{mockStats.exhibitedArtworks}点</p>
+                    <p className="text-3xl text-[#3A3A3A] mb-1">{exhibitedCount}点</p>
                     <p className="text-sm text-gray-600">展示中の作品</p>
-                    {exhibitedArtworks.length > 0 && (
+                    {qrTopLocations.length > 0 && (
                       <p className="text-xs text-gray-500 mt-2">
-                        {exhibitedArtworks[0].location} 他
+                        {qrTopLocations[0].space_name}
+                        {qrTopLocations.length > 1 ? " 他" : ""}
                       </p>
                     )}
                   </CardContent>
@@ -1460,7 +1687,7 @@ export function ArtistDashboard() {
                       <CheckCircle className="w-8 h-8 text-blue-500" />
                       <Badge className="bg-blue-500 text-white">販売済み</Badge>
                     </div>
-                    <p className="text-3xl text-[#3A3A3A] mb-1">{mockStats.soldArtworks}点</p>
+                    <p className="text-3xl text-[#3A3A3A] mb-1">{soldCount}点</p>
                     <p className="text-sm text-gray-600">販売済み作品</p>
                   </CardContent>
                 </Card>
@@ -1477,7 +1704,7 @@ export function ArtistDashboard() {
                       <DollarSign className="w-8 h-8 text-white" />
                       <Badge className="bg-white/20 text-white border-0">今月</Badge>
                     </div>
-                    <p className="text-3xl mb-1">¥{mockStats.monthlyRevenue.toLocaleString()}</p>
+                    <p className="text-3xl mb-1">¥{Math.round(monthlyRevenue).toLocaleString()}</p>
                     <p className="text-sm text-white/80">今月の収益</p>
                   </CardContent>
                 </Card>
@@ -1496,39 +1723,47 @@ export function ArtistDashboard() {
                 <div className="space-y-6">
                   <div>
                     <div className="flex justify-between mb-2">
-                      <span className="text-sm text-gray-600">今月のスキャン数</span>
-                      <span className="text-sm text-[#3A3A3A]">{mockStats.monthlyScans}回</span>
+                      <span className="text-sm text-gray-600">今月のスキャン数（過去30日）</span>
+                      <span className="text-sm text-[#3A3A3A]">{qrMonthly}回</span>
                     </div>
-                    <Progress value={36} className="h-2" />
+                    <Progress value={qrMonthlyPercent} className="h-2" />
                   </div>
                   <div>
                     <div className="flex justify-between mb-2">
                       <span className="text-sm text-gray-600">累計スキャン数</span>
-                      <span className="text-sm text-[#3A3A3A]">{mockStats.totalScans}回</span>
+                      <span className="text-sm text-[#3A3A3A]">{qrTotal}回</span>
                     </div>
-                    <Progress value={62} className="h-2" />
+                    <Progress
+                      value={qrTotal > 0 ? 100 : 0}
+                      className="h-2"
+                    />
                   </div>
                   <div className="pt-4 border-t">
-                    <p className="text-sm text-gray-600 mb-3">📍 最も読まれた場所</p>
+                    <p className="text-sm text-gray-600 mb-3">📍 スキャンが多い展示スペース</p>
                     <div className="space-y-2">
-                      <div className="flex items-center justify-between p-3 bg-[#F8F6F1] rounded-lg">
-                        <div className="flex items-center gap-2">
-                          <MapPin className="w-4 h-4 text-[#C3A36D]" />
-                          <span className="text-sm">The Tokyo Hotel</span>
-                        </div>
-                        <Badge variant="outline" className="border-[#C3A36D]/30 text-[#C3A36D]">
-                          23回
-                        </Badge>
-                      </div>
-                      <div className="flex items-center justify-between p-3 bg-[#F8F6F1] rounded-lg">
-                        <div className="flex items-center gap-2">
-                          <MapPin className="w-4 h-4 text-[#C3A36D]" />
-                          <span className="text-sm">渋谷オフィスビル</span>
-                        </div>
-                        <Badge variant="outline" className="border-[#C3A36D]/30 text-[#C3A36D]">
-                          18回
-                        </Badge>
-                      </div>
+                      {qrTopLocations.length === 0 ? (
+                        <p className="text-sm text-gray-500">
+                          まだQRスキャンがありません。展示が始まると集計されます。
+                        </p>
+                      ) : (
+                        qrTopLocations.map((loc) => (
+                          <div
+                            key={loc.space_id}
+                            className="flex items-center justify-between p-3 bg-[#F8F6F1] rounded-lg"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <MapPin className="w-4 h-4 text-[#C3A36D] flex-shrink-0" />
+                              <span className="text-sm truncate">{loc.space_name}</span>
+                            </div>
+                            <Badge
+                              variant="outline"
+                              className="border-[#C3A36D]/30 text-[#C3A36D] flex-shrink-0"
+                            >
+                              {loc.scan_count}回
+                            </Badge>
+                          </div>
+                        ))
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1545,10 +1780,10 @@ export function ArtistDashboard() {
                   <div>
                     <h3 className="text-xl text-[#3A3A3A] mb-2">現在の状況</h3>
                     <p className="text-base text-gray-600 leading-relaxed mb-3">
-                      あなたの作品は現在、<strong className="text-[#C3A36D]">{mockStats.exhibitedArtworks}つの場所</strong>で展示されています。
+                      あなたの作品は現在、<strong className="text-[#C3A36D]">{exhibitedCount}点</strong>が展示スペースに展示されています。
                     </p>
                     <p className="text-sm text-gray-500">
-                      合計QRスキャン：<strong>{mockStats.totalScans}回</strong>（過去30日：{mockStats.monthlyScans}回）
+                      合計QRスキャン：<strong>{qrTotal}回</strong>（過去30日：{qrMonthly}回）
                     </p>
                   </div>
                 </div>
@@ -1642,6 +1877,9 @@ export function ArtistDashboard() {
                       className={artworkFilter === "all" ? "bg-[#C3A36D] hover:bg-[#C3A36D]/90" : ""}
                     >
                       すべて
+                      {statusCounts != null && (
+                        <FilterChipCount n={statusCounts.all} active={artworkFilter === "all"} />
+                      )}
                     </Button>
                     <Button
                       variant={artworkFilter === "draft" ? "default" : "outline"}
@@ -1653,6 +1891,9 @@ export function ArtistDashboard() {
                       className={artworkFilter === "draft" ? "bg-gray-500 hover:bg-gray-600" : "border-gray-300"}
                     >
                       未公開
+                      {statusCounts != null && (
+                        <FilterChipCount n={statusCounts.draft} active={artworkFilter === "draft"} />
+                      )}
                     </Button>
                     <Button
                       variant={artworkFilter === "published" ? "default" : "outline"}
@@ -1664,6 +1905,59 @@ export function ArtistDashboard() {
                       className={artworkFilter === "published" ? "bg-green-500 hover:bg-green-600" : "border-green-200"}
                     >
                       オンライン公開中
+                      {statusCounts != null && (
+                        <FilterChipCount
+                          n={statusCounts.published}
+                          active={artworkFilter === "published"}
+                        />
+                      )}
+                    </Button>
+                    <Button
+                      variant={artworkFilter === "exhibition_requested" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => {
+                        setArtworkFilter("exhibition_requested");
+                        setArtworkPage(1);
+                      }}
+                      className={
+                        artworkFilter === "exhibition_requested"
+                          ? "bg-orange-600 hover:bg-orange-700 text-white"
+                          : "border-orange-300"
+                      }
+                    >
+                      展示依頼中
+                      {statusCounts != null && (
+                        <FilterChipCount
+                          n={statusCounts.exhibition_requested}
+                          active={artworkFilter === "exhibition_requested"}
+                        />
+                      )}
+                    </Button>
+                    <Button
+                      variant={
+                        artworkFilter === ARTWORK_FILTER_IN_TRANSIT_UNIFIED
+                          ? "default"
+                          : "outline"
+                      }
+                      size="sm"
+                      onClick={() => {
+                        setArtworkFilter(ARTWORK_FILTER_IN_TRANSIT_UNIFIED);
+                        setArtworkPage(1);
+                      }}
+                      className={
+                        artworkFilter === ARTWORK_FILTER_IN_TRANSIT_UNIFIED
+                          ? "bg-violet-600 hover:bg-violet-700 text-white"
+                          : "border-violet-300"
+                      }
+                      title="①展示向け（アーティスト発送後）②法人返送（法人発送後）③回収返送（法人発送後）— いずれも輸送中。詳細は in_transit_kind"
+                    >
+                      輸送中
+                      {statusCounts != null && (
+                        <FilterChipCount
+                          n={statusCounts.in_transit}
+                          active={artworkFilter === ARTWORK_FILTER_IN_TRANSIT_UNIFIED}
+                        />
+                      )}
                     </Button>
                     <Button
                       variant={artworkFilter === "exhibited" ? "default" : "outline"}
@@ -1675,6 +1969,90 @@ export function ArtistDashboard() {
                       className={artworkFilter === "exhibited" ? "bg-[#C3A36D] hover:bg-[#C3A36D]/90" : "border-[#C3A36D]/30"}
                     >
                       展示中
+                      {statusCounts != null && (
+                        <FilterChipCount
+                          n={statusCounts.exhibited}
+                          active={artworkFilter === "exhibited"}
+                        />
+                      )}
+                    </Button>
+                    <Button
+                      variant={
+                        artworkFilter === ARTWORK_FILTER_RETURN_REQUESTED
+                          ? "default"
+                          : "outline"
+                      }
+                      size="sm"
+                      onClick={() => {
+                        setArtworkFilter(ARTWORK_FILTER_RETURN_REQUESTED);
+                        setArtworkPage(1);
+                      }}
+                      className={
+                        artworkFilter === ARTWORK_FILTER_RETURN_REQUESTED
+                          ? "bg-teal-600 hover:bg-teal-700 text-white"
+                          : "border-teal-300"
+                      }
+                      title="法人から返却が申請され、手続き中の作品（展示中のまま）"
+                    >
+                      返却申請中
+                      {statusCounts != null && (
+                        <FilterChipCount
+                          n={statusCounts.return_requested ?? 0}
+                          active={artworkFilter === ARTWORK_FILTER_RETURN_REQUESTED}
+                        />
+                      )}
+                    </Button>
+                    <Button
+                      variant={
+                        artworkFilter === ARTWORK_FILTER_RETURNED_TO_ARTIST
+                          ? "default"
+                          : "outline"
+                      }
+                      size="sm"
+                      onClick={() => {
+                        setArtworkFilter(ARTWORK_FILTER_RETURNED_TO_ARTIST);
+                        setArtworkPage(1);
+                      }}
+                      className={
+                        artworkFilter === ARTWORK_FILTER_RETURNED_TO_ARTIST
+                          ? "bg-slate-600 hover:bg-slate-700 text-white"
+                          : "border-slate-300"
+                      }
+                      title="アーティストに到着済み（法人返却完了または回収完了。DB: recalled）"
+                    >
+                      アーティストに返却済み
+                      {statusCounts != null && (
+                        <FilterChipCount
+                          n={statusCounts.recalled}
+                          active={artworkFilter === ARTWORK_FILTER_RETURNED_TO_ARTIST}
+                        />
+                      )}
+                    </Button>
+                    <Button
+                      variant={
+                        artworkFilter === ARTWORK_FILTER_RECALL_REQUESTED
+                          ? "default"
+                          : "outline"
+                      }
+                      size="sm"
+                      onClick={() => {
+                        setArtworkFilter(ARTWORK_FILTER_RECALL_REQUESTED);
+                        setArtworkPage(1);
+                      }}
+                      className={
+                        artworkFilter === ARTWORK_FILTER_RECALL_REQUESTED
+                          ? "bg-rose-600 hover:bg-rose-700 text-white"
+                          : "border-rose-300"
+                      }
+                      title="アーティストが回収を依頼し、法人の発送を待っている状態（展示中のまま）"
+                    >
+                      回収依頼中
+                      {statusCounts != null && (
+                        <FilterChipCount
+                          n={statusCounts.recall_requested ?? 0}
+                          active={artworkFilter === ARTWORK_FILTER_RECALL_REQUESTED}
+                        />
+                      )}
                     </Button>
                     <Button
                       variant={artworkFilter === "sold" ? "default" : "outline"}
@@ -1686,17 +2064,9 @@ export function ArtistDashboard() {
                       className={artworkFilter === "sold" ? "bg-blue-500 hover:bg-blue-600" : "border-blue-200"}
                     >
                       売却済み
-                    </Button>
-                    <Button
-                      variant={artworkFilter === "returned" ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => {
-                        setArtworkFilter("returned");
-                        setArtworkPage(1);
-                      }}
-                      className={artworkFilter === "returned" ? "bg-gray-500 hover:bg-gray-600" : ""}
-                    >
-                      回収済み
+                      {statusCounts != null && (
+                        <FilterChipCount n={statusCounts.sold} active={artworkFilter === "sold"} />
+                      )}
                     </Button>
                   </div>
                   
@@ -2165,7 +2535,7 @@ export function ArtistDashboard() {
             <>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredArtworks.map((artwork, index) => {
-                const config = statusConfig[artwork.status as keyof typeof statusConfig];
+                const config = listBadgeConfig(artwork);
                 return (
                   <motion.div
                     key={artwork.id}
@@ -2184,16 +2554,26 @@ export function ArtistDashboard() {
                         onMouseEnter={() => handleCarouselHover(artwork.id, true)}
                         onMouseLeave={() => handleCarouselHover(artwork.id, false)}
                       >
-                        {/* ステータスバッジを右上に統一 */}
-                        <div className="absolute top-4 right-4 z-10 flex flex-col gap-2 items-end">
+                        {/* ステータスバッジを右上 — z-30 でカルセル画像(z-10)より手前に描画 */}
+                        <div className="absolute top-4 right-4 z-30 flex flex-col gap-2 items-end">
                           <Badge className={`${config.color} text-white border-0 shadow-md`}>
                             {config.label}
                           </Badge>
                           {/* QRスキャン数バッジ */}
                           {artwork.scans !== undefined && artwork.scans > 0 && (
-                            <Badge variant="outline" className="bg-white/95 border-gray-300 shadow-sm">
-                              <QrCode className="w-3 h-3 mr-1" />
-                              {artwork.scans}回
+                            <Badge
+                              variant="outline"
+                              className="bg-white/95 border-gray-300 shadow-sm"
+                              title="作品ページの閲覧数（公開中に他ユーザーが詳細を開いた回数）"
+                            >
+                              <Eye className="w-3 h-3 mr-1 shrink-0" />
+                              閲覧 {artwork.scans}回
+                            </Badge>
+                          )}
+                          {(issueOpenCounts[artwork.id] ?? 0) > 0 && (
+                            <Badge className="bg-red-600 hover:bg-red-600 text-white border-0 shadow-md">
+                              <AlertTriangle className="w-3 h-3 mr-1 shrink-0" />
+                              不具合報告 {issueOpenCounts[artwork.id]}
                             </Badge>
                           )}
                         </div>
@@ -2553,6 +2933,122 @@ export function ArtistDashboard() {
                   <p className="text-xs text-gray-500">電話番号は公開されません</p>
                 </div>
 
+                {/* 配送・返送先住所（addresses.shipping） */}
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-lg text-[#3A3A3A]">配送・返送先住所</h3>
+                    <p className="text-xs text-gray-500 mt-1">
+                      宛名は上記の「名前（公開名）」を使用します。ギャラリーには表示されません。作品の発送・返送・返品手続きに使用します。
+                      <span className="block mt-0.5">
+                        Recipient name matches your public name above. Not shown publicly. Used for shipping and returns.
+                      </span>
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="shipping_postal_code" className="text-sm">
+                        郵便番号
+                      </Label>
+                      <Input
+                        id="shipping_postal_code"
+                        value={profileFormData.shipping_postal_code}
+                        onChange={(e) =>
+                          setProfileFormData({
+                            ...profileFormData,
+                            shipping_postal_code: e.target.value,
+                          })
+                        }
+                        className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
+                        placeholder="123-4567"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="shipping_prefecture" className="text-sm">
+                        都道府県
+                      </Label>
+                      <Input
+                        id="shipping_prefecture"
+                        value={profileFormData.shipping_prefecture}
+                        onChange={(e) =>
+                          setProfileFormData({
+                            ...profileFormData,
+                            shipping_prefecture: e.target.value,
+                          })
+                        }
+                        className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
+                        placeholder="東京都"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="shipping_city" className="text-sm">
+                      市区町村
+                    </Label>
+                    <Input
+                      id="shipping_city"
+                      value={profileFormData.shipping_city}
+                      onChange={(e) =>
+                        setProfileFormData({ ...profileFormData, shipping_city: e.target.value })
+                      }
+                      className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="shipping_street_address" className="text-sm">
+                      番地
+                    </Label>
+                    <Input
+                      id="shipping_street_address"
+                      value={profileFormData.shipping_street_address}
+                      onChange={(e) =>
+                        setProfileFormData({
+                          ...profileFormData,
+                          shipping_street_address: e.target.value,
+                        })
+                      }
+                      className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="shipping_building_name" className="text-sm">
+                      建物名・部屋番号（任意）
+                    </Label>
+                    <Input
+                      id="shipping_building_name"
+                      value={profileFormData.shipping_building_name}
+                      onChange={(e) =>
+                        setProfileFormData({
+                          ...profileFormData,
+                          shipping_building_name: e.target.value,
+                        })
+                      }
+                      className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="shipping_phone" className="text-sm">
+                      配送先電話（任意）
+                    </Label>
+                    <Input
+                      id="shipping_phone"
+                      type="tel"
+                      value={profileFormData.shipping_phone}
+                      onChange={(e) =>
+                        setProfileFormData({ ...profileFormData, shipping_phone: e.target.value })
+                      }
+                      className="h-11 bg-gray-100 border-gray-200 focus:bg-white focus:border-primary"
+                    />
+                    <p className="text-xs text-gray-500">
+                      宅配担当者の連絡用。未入力の場合は上記の「電話番号（非公開）」を参照します。
+                    </p>
+                  </div>
+                </div>
+
                 {/* 自己紹介 */}
                 <div className="space-y-2">
                       <Label htmlFor="bio" className="text-sm">自己紹介文</Label>
@@ -2701,7 +3197,9 @@ export function ArtistDashboard() {
                 <CardContent className="pt-6">
                   <DollarSign className="w-8 h-8 mb-3 text-white" />
                   <p className="text-sm text-white/80 mb-1">累計売上</p>
-                  <p className="text-3xl">¥{(mockStats.monthlyRevenue * 2).toLocaleString()}</p>
+                  <p className="text-3xl">
+                    ¥{Math.round(totalRevenueAll).toLocaleString()}
+                  </p>
                 </CardContent>
               </Card>
 
@@ -2709,7 +3207,9 @@ export function ArtistDashboard() {
                 <CardContent className="pt-6">
                   <TrendingUp className="w-8 h-8 mb-3 text-[#C3A36D]" />
                   <p className="text-sm text-gray-600 mb-1">今月売上</p>
-                  <p className="text-3xl text-[#3A3A3A]">¥{mockStats.monthlyRevenue.toLocaleString()}</p>
+                  <p className="text-3xl text-[#3A3A3A]">
+                    ¥{Math.round(monthlyRevenue).toLocaleString()}
+                  </p>
                 </CardContent>
               </Card>
 
@@ -2717,7 +3217,7 @@ export function ArtistDashboard() {
                 <CardContent className="pt-6">
                   <Calendar className="w-8 h-8 mb-3 text-gray-500" />
                   <p className="text-sm text-gray-600 mb-1">次回振込予定</p>
-                  <p className="text-xl text-[#3A3A3A]">2025年1月末</p>
+                  <p className="text-xl text-[#3A3A3A]">—</p>
                 </CardContent>
               </Card>
             </div>
@@ -2731,26 +3231,36 @@ export function ArtistDashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
+                {revenueAnalyticsLoading ? (
+                  <p className="text-sm text-gray-500">読み込み中…</p>
+                ) : revenueByMonth.length === 0 ? (
+                  <p className="text-sm text-gray-500">
+                    販売済みの作品がまだないか、売上データがありません。
+                  </p>
+                ) : (
                 <div className="space-y-4">
-                  {mockSalesHistory.map((item, index) => (
-                    <div key={index} className="space-y-2">
+                  {[...revenueByMonth].reverse().map((item, index) => (
+                    <div key={item.period} className="space-y-2">
                       <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">{item.month}</span>
+                        <span className="text-gray-600">{item.period}</span>
                         <span className="text-[#3A3A3A]">
-                          ¥{item.revenue.toLocaleString()} ({item.count}点)
+                          ¥{Math.round(item.revenue).toLocaleString()}
                         </span>
                       </div>
                       <div className="h-8 bg-gray-100 rounded-lg overflow-hidden">
                         <motion.div
                           initial={{ width: 0 }}
-                          animate={{ width: `${(item.revenue / 120000) * 100}%` }}
-                          transition={{ delay: index * 0.1, duration: 0.8 }}
+                          animate={{
+                            width: `${maxMonthRev > 0 ? Math.min(100, (item.revenue / maxMonthRev) * 100) : 0}%`,
+                          }}
+                          transition={{ delay: index * 0.05, duration: 0.5 }}
                           className="h-full bg-gradient-to-r from-[#C3A36D] to-[#D4B478]"
                         />
                       </div>
                     </div>
                   ))}
                 </div>
+                )}
               </CardContent>
             </Card>
 
@@ -2760,30 +3270,43 @@ export function ArtistDashboard() {
                 <CardTitle>販売済み作品</CardTitle>
               </CardHeader>
               <CardContent>
+                {revenueAnalyticsLoading ? (
+                  <p className="text-sm text-gray-500">読み込み中…</p>
+                ) : !revenueAnalytics?.revenue_by_artwork?.length ? (
+                  <p className="text-sm text-gray-500">販売済みの作品はまだありません。</p>
+                ) : (
                 <div className="space-y-4">
-                  {mockArtworks
-                    .filter((a) => a.status === "sold")
-                    .map((artwork) => (
-                      <div key={artwork.id} className="flex items-center justify-between p-4 bg-[#F8F6F1] rounded-lg">
-                        <div className="flex items-center gap-4">
-                          <div className="w-16 h-16 bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg flex items-center justify-center">
+                  {revenueAnalytics.revenue_by_artwork.map((row) => (
+                      <div
+                        key={row.artwork_id}
+                        className="flex items-center justify-between p-4 bg-[#F8F6F1] rounded-lg"
+                      >
+                        <div className="flex items-center gap-4 min-w-0">
+                          <div className="w-16 h-16 bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg flex items-center justify-center flex-shrink-0">
                             <ImageIcon className="w-8 h-8 text-gray-400" />
                           </div>
-                          <div>
-                            <p className="text-base text-[#3A3A3A] mb-1">{artwork.name}</p>
-                            <p className="text-sm text-gray-600">{artwork.buyer}</p>
-                            <p className="text-xs text-gray-500">{artwork.soldDate}</p>
+                          <div className="min-w-0">
+                            <p className="text-base text-[#3A3A3A] mb-1 truncate">
+                              {row.title}
+                            </p>
+                            <p className="text-xs text-gray-500 font-mono">{row.custom_id}</p>
+                            {row.sold_at && (
+                              <p className="text-xs text-gray-500">
+                                {new Date(row.sold_at).toLocaleDateString("ja-JP")}
+                              </p>
+                            )}
                           </div>
                         </div>
-                        <div className="text-right">
-                          <p className="text-lg text-[#C3A36D] mb-1">¥{artwork.price.toLocaleString()}</p>
-                          <Badge className="bg-green-500 text-white text-xs">
-                            {artwork.paymentStatus === "paid" ? "振込済み" : "振込待ち"}
-                          </Badge>
+                        <div className="text-right flex-shrink-0">
+                          <p className="text-lg text-[#C3A36D] mb-1">
+                            ¥{Math.round(row.price).toLocaleString()}
+                          </p>
+                          <Badge className="bg-green-600 text-white text-xs">販売済み</Badge>
                         </div>
                       </div>
                     ))}
                 </div>
+                )}
               </CardContent>
             </Card>
 
@@ -2793,28 +3316,9 @@ export function ArtistDashboard() {
                 <CardTitle>振込履歴</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between p-4 border-b">
-                    <div>
-                      <p className="text-sm text-[#3A3A3A]">2024年10月分</p>
-                      <p className="text-xs text-gray-500">振込日：2024-11-30</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-base text-[#3A3A3A]">¥95,000</p>
-                      <Badge className="bg-green-500 text-white text-xs mt-1">完了</Badge>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between p-4 border-b">
-                    <div>
-                      <p className="text-sm text-[#3A3A3A]">2024年9月分</p>
-                      <p className="text-xs text-gray-500">振込日：2024-10-31</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-base text-[#3A3A3A]">¥65,000</p>
-                      <Badge className="bg-green-500 text-white text-xs mt-1">完了</Badge>
-                    </div>
-                  </div>
-                </div>
+                <p className="text-sm text-gray-500">
+                  振込の詳細は別途お知らせする予定です。現時点ではデータ連携していません。
+                </p>
               </CardContent>
             </Card>
           </TabsContent>

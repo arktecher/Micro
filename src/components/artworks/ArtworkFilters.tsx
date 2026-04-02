@@ -14,11 +14,13 @@ interface ArtworkFiltersProps {
   selectedPriceRanges: string[];
   selectedTechniques: string[];
   selectedStyles: string[];
+  artistName: string;
   onColorsChange: (colors: string[]) => void;
   onSizesChange: (sizes: string[]) => void;
   onPriceRangesChange: (ranges: string[]) => void;
   onTechniquesChange: (techniques: string[]) => void;
   onStylesChange: (styles: string[]) => void;
+  onArtistNameChange: (name: string) => void;
   onClearAll: () => void;
 }
 
@@ -28,11 +30,13 @@ export function ArtworkFilters({
   selectedPriceRanges,
   selectedTechniques,
   selectedStyles,
+  artistName,
   onColorsChange,
   onSizesChange,
   onPriceRangesChange,
   onTechniquesChange,
   onStylesChange,
+  onArtistNameChange,
   onClearAll,
 }: ArtworkFiltersProps) {
   const toggleColor = (hex: string) => {
@@ -201,6 +205,8 @@ export function ArtworkFilters({
         <Input
           type="text"
           placeholder="作家名を入力"
+          value={artistName}
+          onChange={(e) => onArtistNameChange(e.target.value)}
           className="bg-gray-50 border-gray-200"
         />
       </div>

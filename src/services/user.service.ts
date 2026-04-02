@@ -3,35 +3,44 @@
  * Handles user profile and account management
  */
 import { api } from "@/lib/api";
+import type { CorporateOrgRole } from "@/lib/corporatePermissions";
 
 export interface UserProfile {
   id: string;
   email: string;
   name: string;
-  role: "artist" | "customer" | "corporate";
+  /** API returns `user_type`; older code may use `role` */
+  user_type?: "artist" | "customer" | "corporate";
+  role?: "artist" | "customer" | "corporate";
+  /** GET /users/me — corporate only (primary | admin | editor | viewer) */
+  corporate_role?: CorporateOrgRole;
   profile_image_url?: string;
-  profile_completion: number;
+  profile_completion?: number;
   phone_number?: string;
+  phone?: string;
   address?: string;
   postal_code?: string;
   biography?: string;
   company_name?: string;
+  contact_name?: string;
   company_address?: string;
   company_postal_code?: string;
-  created_at: string;
-  updated_at: string;
+  created_at?: string;
+  updated_at?: string;
+  status?: string;
 }
 
 export interface UpdateProfileRequest {
   name?: string;
-  phone?: string;  // Backend uses 'phone', not 'phone_number'
-  phone_number?: string;  // Keep for backward compatibility, will be mapped
+  contact_name?: string;
+  phone?: string;
+  phone_number?: string;
   address?: string;
   postal_code?: string;
-  bio?: string;  // Backend uses 'bio' for artists
-  biography?: string;  // Keep for backward compatibility
-  website?: string;  // For artists
-  instagram?: string;  // For artists
+  bio?: string;
+  biography?: string;
+  website?: string;
+  instagram?: string;
   company_name?: string;
   company_address?: string;
   company_postal_code?: string;

@@ -17,10 +17,11 @@ interface Space {
 interface SpaceSelectionModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  artworkId: number;
+  /** Artwork UUID (reserved for future API use) */
+  artworkId?: string;
 }
 
-export function SpaceSelectionModal({ open, onOpenChange, artworkId }: SpaceSelectionModalProps) {
+export function SpaceSelectionModal({ open, onOpenChange }: SpaceSelectionModalProps) {
   const navigate = useNavigate();
   const [spaces, setSpaces] = useState<Space[]>([]);
 

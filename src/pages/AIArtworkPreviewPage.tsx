@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { motion } from "motion/react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
+import { useCorporateOrgRole } from "@/hooks/useCorporateOrgRole";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ImageWithFallback } from "@/components/common/ImageWithFallback";
@@ -18,6 +20,7 @@ import {
   Upload,
   Download,
   Image as ImageIcon,
+  Loader2,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Slider } from "@/components/ui/slider";
@@ -269,6 +272,13 @@ const alternativeMockRecommendations: Artwork[] = [
 export function AIArtworkPreviewPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { isAuthenticated, userType, isInitialized, corporateRole } = useAuth();
+  const { canEdit } = useCorporateOrgRole();
+  const isCorporateViewer =
+    isAuthenticated &&
+    userType === "corporate" &&
+    corporateRole !== null &&
+    !canEdit;
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -414,6 +424,7 @@ export function AIArtworkPreviewPage() {
   }, [aiLoading, params.spaceId]);
 
   const toggleFavorite = (id: number, e?: React.MouseEvent) => {
+    if (isCorporateViewer) return;
     e?.stopPropagation();
 
     const storageKey = "mgj_corporate_favorites";
@@ -438,6 +449,7 @@ export function AIArtworkPreviewPage() {
   };
 
   const handleArtworkSelect = (artwork: Artwork) => {
+    if (isCorporateViewer) return;
     navigate(`/corporate-artwork/${artwork.id}`, {
       state: {
         artwork: artwork,
@@ -456,6 +468,7 @@ export function AIArtworkPreviewPage() {
   };
 
   const handleRepropose = () => {
+    if (isCorporateViewer) return;
     setIsReproposing(true);
     setAiLoading(true);
     setAiProgress(0);
@@ -563,6 +576,7 @@ export function AIArtworkPreviewPage() {
   };
 
   const handleImageSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (isCorporateViewer) return;
     const file = event.target.files?.[0];
     if (file) {
       const reader = new FileReader();
@@ -585,6 +599,7 @@ export function AIArtworkPreviewPage() {
   };
 
   const handleCameraCapture = async () => {
+    if (isCorporateViewer) return;
     // For mobile devices (especially iOS), use file input with capture attribute
     // This is more reliable than getUserMedia on mobile browsers
     if (isMobileDevice()) {
@@ -719,7 +734,20 @@ export function AIArtworkPreviewPage() {
     };
   }, []);
 
+  /** Viewers may open this URL from the space page; keep preview read-only (no capture / assign / favorites). */
+  useEffect(() => {
+    if (!isCorporateViewer) return;
+    setAiLoading(false);
+    setCurrentStep("recommendation");
+  }, [isCorporateViewer]);
+
+  useEffect(() => {
+    if (!isCorporateViewer || activeTab !== "favorites") return;
+    setActiveTab("proposals");
+  }, [isCorporateViewer, activeTab]);
+
   const startAnalysis = () => {
+    if (isCorporateViewer) return;
     setCurrentStep("analyzing");
     setAiLoading(true);
     setAiProgress(0);
@@ -767,6 +795,20 @@ export function AIArtworkPreviewPage() {
       setCurrentStep("recommendation");
     }, 3000);
   };
+
+  if (
+    isInitialized &&
+    isAuthenticated &&
+    userType === "corporate" &&
+    corporateRole === null
+  ) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center gap-3">
+        <Loader2 className="h-10 w-10 animate-spin text-primary" />
+        <p className="text-sm text-gray-600">権限情報を読み込み中…</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -1048,27 +1090,31 @@ export function AIArtworkPreviewPage() {
               onValueChange={setActiveTab}
               className="w-full"
             >
-              <TabsList className="grid w-full grid-cols-2 mb-4 h-10">
+              <TabsList
+                className={`grid w-full mb-4 h-10 ${isCorporateViewer ? "grid-cols-1" : "grid-cols-2"}`}
+              >
                 <TabsTrigger value="proposals" className="text-xs sm:text-sm">
                   <Sparkles className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-1.5" />
                   <span className="hidden sm:inline">AIによる提案</span>
                   <span className="sm:hidden">提案</span>
                   <span className="ml-1">({mockRecommendations.length})</span>
                 </TabsTrigger>
-                <TabsTrigger
-                  value="favorites"
-                  className="relative text-xs sm:text-sm"
-                >
-                  <Heart className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-1.5" />
-                  <span className="hidden sm:inline">お気に入り</span>
-                  <span className="sm:hidden">お気に入り</span>
-                  <span className="ml-1">({favorites.length})</span>
-                  {favorites.length > 0 && (
-                    <span className="absolute -top-1 -right-1 w-4 h-4 sm:w-5 sm:h-5 bg-pink-500 text-white text-[10px] sm:text-xs rounded-full flex items-center justify-center">
-                      {favorites.length}
-                    </span>
-                  )}
-                </TabsTrigger>
+                {!isCorporateViewer && (
+                  <TabsTrigger
+                    value="favorites"
+                    className="relative text-xs sm:text-sm"
+                  >
+                    <Heart className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-1.5" />
+                    <span className="hidden sm:inline">お気に入り</span>
+                    <span className="sm:hidden">お気に入り</span>
+                    <span className="ml-1">({favorites.length})</span>
+                    {favorites.length > 0 && (
+                      <span className="absolute -top-1 -right-1 w-4 h-4 sm:w-5 sm:h-5 bg-pink-500 text-white text-[10px] sm:text-xs rounded-full flex items-center justify-center">
+                        {favorites.length}
+                      </span>
+                    )}
+                  </TabsTrigger>
+                )}
               </TabsList>
 
               <TabsContent value="proposals" className="mt-0">
@@ -1087,7 +1133,7 @@ export function AIArtworkPreviewPage() {
 
                         <motion.div
                           key={selectedArtworkIndex}
-                          drag
+                          drag={!isCorporateViewer}
                           dragMomentum={false}
                           dragElastic={0.1}
                           initial={{
@@ -1182,7 +1228,7 @@ export function AIArtworkPreviewPage() {
                               )}
                             </p>
 
-                            {scaleResult.method === "furniture" && (
+                            {scaleResult.method === "furniture" && !isCorporateViewer && (
                               <div className="bg-white rounded-lg p-2 sm:p-3 space-y-2 sm:space-y-2.5">
                                 <div className="flex items-center gap-2">
                                   <span className="text-xs sm:text-sm">📐</span>
@@ -1238,93 +1284,95 @@ export function AIArtworkPreviewPage() {
                       spaceName={params.spaceName}
                     />
 
-                    <div className="p-3 sm:p-4 bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl border border-purple-200 space-y-2 sm:space-y-3">
-                      <div className="flex items-center gap-2">
-                        <Sparkles className="w-3 h-3 sm:w-4 sm:h-4 text-purple-600" />
-                        <h4 className="text-xs sm:text-sm text-purple-900">
-                          テイストで再提案
-                        </h4>
+                    {!isCorporateViewer && (
+                      <div className="p-3 sm:p-4 bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl border border-purple-200 space-y-2 sm:space-y-3">
+                        <div className="flex items-center gap-2">
+                          <Sparkles className="w-3 h-3 sm:w-4 sm:h-4 text-purple-600" />
+                          <h4 className="text-xs sm:text-sm text-purple-900">
+                            テイストで再提案
+                          </h4>
+                        </div>
+
+                        <div className="space-y-2 sm:space-y-3">
+                          <div>
+                            <div className="flex justify-between text-[10px] sm:text-xs text-gray-700 mb-1 sm:mb-1.5">
+                              <span>クラシック</span>
+                              <span>モダン</span>
+                            </div>
+                            <Slider
+                              value={modernLevel}
+                              onValueChange={setModernLevel}
+                              max={100}
+                              step={1}
+                              className="w-full"
+                            />
+                          </div>
+
+                          <div>
+                            <div className="flex justify-between text-[10px] sm:text-xs text-gray-700 mb-1 sm:mb-1.5">
+                              <span>モノトーン</span>
+                              <span>カラフル</span>
+                            </div>
+                            <Slider
+                              value={colorLevel}
+                              onValueChange={setColorLevel}
+                              max={100}
+                              step={1}
+                              className="w-full"
+                            />
+                          </div>
+
+                          <div>
+                            <div className="flex justify-between text-[10px] sm:text-xs text-gray-700 mb-1 sm:mb-1.5">
+                              <span>具象的</span>
+                              <span>抽象的</span>
+                            </div>
+                            <Slider
+                              value={abstractLevel}
+                              onValueChange={setAbstractLevel}
+                              max={100}
+                              step={1}
+                              className="w-full"
+                            />
+                          </div>
+
+                          <div>
+                            <div className="flex justify-between text-[10px] sm:text-xs text-gray-700 mb-1 sm:mb-1.5">
+                              <span>小さめ作品</span>
+                              <span>大きめ作品</span>
+                            </div>
+                            <Slider
+                              value={sizeLevel}
+                              onValueChange={setSizeLevel}
+                              max={100}
+                              step={1}
+                              className="w-full"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-[10px] sm:text-xs text-gray-700 mb-1 sm:mb-1.5 block">
+                              その他のご希望
+                            </label>
+                            <Textarea
+                              value={preferenceText}
+                              onChange={(e) => setPreferenceText(e.target.value)}
+                              placeholder="例：明るい雰囲気、和の要素、青系など"
+                              className="w-full min-h-[50px] sm:min-h-[60px] text-[10px] sm:text-xs resize-none"
+                            />
+                          </div>
+                        </div>
+
+                        <Button
+                          className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white h-8 sm:h-9 shadow-md hover:shadow-lg transition-all text-xs sm:text-sm"
+                          onClick={handleRepropose}
+                          disabled={isReproposing}
+                        >
+                          <Sparkles className="w-3 h-3 sm:w-4 sm:h-4" />
+                          <span>再提案</span>
+                        </Button>
                       </div>
-
-                      <div className="space-y-2 sm:space-y-3">
-                        <div>
-                          <div className="flex justify-between text-[10px] sm:text-xs text-gray-700 mb-1 sm:mb-1.5">
-                            <span>クラシック</span>
-                            <span>モダン</span>
-                          </div>
-                          <Slider
-                            value={modernLevel}
-                            onValueChange={setModernLevel}
-                            max={100}
-                            step={1}
-                            className="w-full"
-                          />
-                        </div>
-
-                        <div>
-                          <div className="flex justify-between text-[10px] sm:text-xs text-gray-700 mb-1 sm:mb-1.5">
-                            <span>モノトーン</span>
-                            <span>カラフル</span>
-                          </div>
-                          <Slider
-                            value={colorLevel}
-                            onValueChange={setColorLevel}
-                            max={100}
-                            step={1}
-                            className="w-full"
-                          />
-                        </div>
-
-                        <div>
-                          <div className="flex justify-between text-[10px] sm:text-xs text-gray-700 mb-1 sm:mb-1.5">
-                            <span>具象的</span>
-                            <span>抽象的</span>
-                          </div>
-                          <Slider
-                            value={abstractLevel}
-                            onValueChange={setAbstractLevel}
-                            max={100}
-                            step={1}
-                            className="w-full"
-                          />
-                        </div>
-
-                        <div>
-                          <div className="flex justify-between text-[10px] sm:text-xs text-gray-700 mb-1 sm:mb-1.5">
-                            <span>小さめ作品</span>
-                            <span>大きめ作品</span>
-                          </div>
-                          <Slider
-                            value={sizeLevel}
-                            onValueChange={setSizeLevel}
-                            max={100}
-                            step={1}
-                            className="w-full"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="text-[10px] sm:text-xs text-gray-700 mb-1 sm:mb-1.5 block">
-                            その他のご希望
-                          </label>
-                          <Textarea
-                            value={preferenceText}
-                            onChange={(e) => setPreferenceText(e.target.value)}
-                            placeholder="例：明るい雰囲気、和の要素、青系など"
-                            className="w-full min-h-[50px] sm:min-h-[60px] text-[10px] sm:text-xs resize-none"
-                          />
-                        </div>
-                      </div>
-
-                      <Button
-                        className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white h-8 sm:h-9 shadow-md hover:shadow-lg transition-all text-xs sm:text-sm"
-                        onClick={handleRepropose}
-                        disabled={isReproposing}
-                      >
-                        <Sparkles className="w-3 h-3 sm:w-4 sm:h-4" />
-                        <span>再提案</span>
-                      </Button>
-                    </div>
+                    )}
                   </div>
 
                   <div className="lg:col-span-2">
@@ -1353,21 +1401,24 @@ export function AIArtworkPreviewPage() {
                             </div>
                           )}
 
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggleFavorite(artwork.id, e);
-                            }}
-                            className="absolute top-1 sm:top-1.5 right-1 sm:right-1.5 z-10 w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-white/90 backdrop-blur-sm flex items-center justify-center hover:bg-white transition-colors shadow-md"
-                          >
-                            <Heart
-                              className={`w-2.5 h-2.5 sm:w-3 sm:h-3 ${
-                                favorites.includes(artwork.id)
-                                  ? "fill-pink-500 text-pink-500"
-                                  : "text-gray-600"
-                              }`}
-                            />
-                          </button>
+                          {!isCorporateViewer && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleFavorite(artwork.id, e);
+                              }}
+                              className="absolute top-1 sm:top-1.5 right-1 sm:right-1.5 z-10 w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-white/90 backdrop-blur-sm flex items-center justify-center hover:bg-white transition-colors shadow-md"
+                            >
+                              <Heart
+                                className={`w-2.5 h-2.5 sm:w-3 sm:h-3 ${
+                                  favorites.includes(artwork.id)
+                                    ? "fill-pink-500 text-pink-500"
+                                    : "text-gray-600"
+                                }`}
+                              />
+                            </button>
+                          )}
 
                           <div className="aspect-square bg-gray-100 overflow-hidden relative">
                             <ImageWithFallback
@@ -1403,16 +1454,18 @@ export function AIArtworkPreviewPage() {
                               ))}
                             </div>
 
-                            <Button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleArtworkSelect(artwork);
-                              }}
-                              size="sm"
-                              className="w-full bg-gradient-to-r from-accent to-purple-500 hover:from-accent/90 hover:to-purple-600 text-white h-6 sm:h-7 text-[9px] sm:text-[10px]"
-                            >
-                              この作品を展示する
-                            </Button>
+                            {!isCorporateViewer && (
+                              <Button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleArtworkSelect(artwork);
+                                }}
+                                size="sm"
+                                className="w-full bg-gradient-to-r from-accent to-purple-500 hover:from-accent/90 hover:to-purple-600 text-white h-6 sm:h-7 text-[9px] sm:text-[10px]"
+                              >
+                                この作品を展示する
+                              </Button>
+                            )}
                           </div>
                         </motion.div>
                       ))}
@@ -1421,6 +1474,7 @@ export function AIArtworkPreviewPage() {
                 </div>
               </TabsContent>
 
+              {!isCorporateViewer && (
               <TabsContent value="favorites" className="mt-0">
                 {favorites.length === 0 ? (
                   <motion.div
@@ -1605,6 +1659,7 @@ export function AIArtworkPreviewPage() {
                   </div>
                 )}
               </TabsContent>
+              )}
             </Tabs>
           </motion.div>
         )}

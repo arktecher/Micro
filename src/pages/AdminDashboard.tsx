@@ -11,830 +11,729 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  LayoutDashboard,
-  Building2,
-  Palette,
-  Image,
-  MapPin,
-  Truck,
-  DollarSign,
-  FileText,
-  MessageSquare,
-  Users,
-  TrendingUp,
-  Settings,
-  Search,
-  Download,
-  Eye,
-  Edit,
-  Trash2,
-  AlertCircle,
-  CheckCircle,
-  Clock,
-  XCircle,
-  Package,
-  TrendingDown,
-  Calendar,
-  Phone,
-  Mail,
-  MapPinned,
-  CreditCard,
-  BarChart3,
-  PieChart,
-  ChevronRight,
-  Flag,
-  Menu
-} from "lucide-react";
-import {
-  Sheet,
-  SheetContent,
-} from "@/components/ui/sheet";
-
-// モックデータ
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, } from "@/components/ui/table";
+import { LayoutDashboard, Building2, Palette, Image, MapPin, Truck, DollarSign, FileText, MessageSquare, Users, TrendingUp, Settings, Search, Download, Eye, Edit, Trash2, AlertCircle, CheckCircle, Clock, XCircle, Package, TrendingDown, Calendar, Phone, Mail, MapPinned, CreditCard, BarChart3, PieChart, ChevronRight, Flag, Menu } from "lucide-react";
+import { Sheet, SheetContent, } from "@/components/ui/sheet";
 const mockDashboardStats = {
-  newActions: {
-    corporates: 2,
-    artists: 3,
-    artworks: 5,
-  },
-  displayed: {
-    total: 24,
-    byCorporate: 8,
-  },
-  shipping: {
-    returns: 3,
-    newDeliveries: 2,
-    delayed: 1,
-  },
-  revenue: {
-    thisMonth: 456000,
-    total: 3240000,
-  },
-  issues: {
-    total: 4,
-    pending: 2,
-  },
-  alerts: [
-    { id: 1, type: "warning", message: "リース期限切れ: 3件の作品が6ヶ月を超過", count: 3 },
-    { id: 2, type: "error", message: "破損報告: 1件の未対応報告があります", count: 1 },
-    { id: 3, type: "info", message: "未返却作品: 返却期限を過ぎている作品が2件", count: 2 },
-  ],
+    newActions: {
+        corporates: 2,
+        artists: 3,
+        artworks: 5,
+    },
+    displayed: {
+        total: 24,
+        byCorporate: 8,
+    },
+    shipping: {
+        returns: 3,
+        newDeliveries: 2,
+        delayed: 1,
+    },
+    revenue: {
+        thisMonth: 456000,
+        total: 3240000,
+    },
+    issues: {
+        total: 4,
+        pending: 2,
+    },
+    alerts: [
+        { id: 1, type: "warning", message: "リース期限切れ: 3件の作品が6ヶ月を超過", count: 3 },
+        { id: 2, type: "error", message: "破損報告: 1件の未対応報告があります", count: 1 },
+        { id: 3, type: "info", message: "未返却作品: 返却期限を過ぎている作品が2件", count: 2 },
+    ],
 };
-
 const mockCorporates = [
-  {
-    id: "C001",
-    name: "株式会社グローバルホテルズ",
-    location: "東京都港区",
-    contact: "田中 一郎",
-    phone: "03-1234-5678",
-    email: "tanaka@global-hotels.jp",
-    industry: "ホテル",
-    plan: "プレミアム",
-    registeredAt: "2024-03-15",
-    lastLogin: "2024-10-28",
-    status: "アクティブ",
-    contractStatus: "契約中",
-    contractPeriod: "2024-03-15 〜 2025-03-14",
-    paymentMethod: "クレジットカード",
-    displayedArtworks: 8,
-    totalRevenue: 450000,
-    displayHistory: 24,
-    spaces: 5,
-  },
-  {
-    id: "C002",
-    name: "テックオフィス株式会社",
-    location: "東京都渋谷区",
-    contact: "佐藤 花子",
-    phone: "03-9876-5432",
-    email: "sato@tech-office.jp",
-    industry: "オフィス",
-    plan: "スタンダード",
-    registeredAt: "2024-05-20",
-    lastLogin: "2024-10-27",
-    status: "アクティブ",
-    contractStatus: "契約中",
-    contractPeriod: "2024-05-20 〜 2025-05-19",
-    paymentMethod: "請求書",
-    displayedArtworks: 5,
-    totalRevenue: 280000,
-    displayHistory: 12,
-    spaces: 3,
-  },
-  {
-    id: "C003",
-    name: "メディカルケアクリニック",
-    location: "大阪府大阪市",
-    contact: "鈴木 太郎",
-    phone: "06-1111-2222",
-    email: "suzuki@medical-care.jp",
-    industry: "病院",
-    plan: "スタンダード",
-    registeredAt: "2024-08-01",
-    lastLogin: "2024-10-20",
-    status: "体験",
-    contractStatus: "体験",
-    contractPeriod: "2024-08-01 〜 2024-11-01",
-    paymentMethod: "クレジットカード",
-    displayedArtworks: 3,
-    totalRevenue: 0,
-    displayHistory: 3,
-    spaces: 2,
-  },
+    {
+        id: "C001",
+        name: "株式会社グローバルホテルズ",
+        location: "東京都港区",
+        contact: "田中 一郎",
+        phone: "03-1234-5678",
+        email: "tanaka@global-hotels.jp",
+        industry: "ホテル",
+        plan: "プレミアム",
+        registeredAt: "2024-03-15",
+        lastLogin: "2024-10-28",
+        status: "アクティブ",
+        contractStatus: "契約中",
+        contractPeriod: "2024-03-15 〜 2025-03-14",
+        paymentMethod: "クレジットカード",
+        displayedArtworks: 8,
+        totalRevenue: 450000,
+        displayHistory: 24,
+        spaces: 5,
+    },
+    {
+        id: "C002",
+        name: "テックオフィス株式会社",
+        location: "東京都渋谷区",
+        contact: "佐藤 花子",
+        phone: "03-9876-5432",
+        email: "sato@tech-office.jp",
+        industry: "オフィス",
+        plan: "スタンダード",
+        registeredAt: "2024-05-20",
+        lastLogin: "2024-10-27",
+        status: "アクティブ",
+        contractStatus: "契約中",
+        contractPeriod: "2024-05-20 〜 2025-05-19",
+        paymentMethod: "請求書",
+        displayedArtworks: 5,
+        totalRevenue: 280000,
+        displayHistory: 12,
+        spaces: 3,
+    },
+    {
+        id: "C003",
+        name: "メディカルケアクリニック",
+        location: "大阪府大阪市",
+        contact: "鈴木 太郎",
+        phone: "06-1111-2222",
+        email: "suzuki@medical-care.jp",
+        industry: "病院",
+        plan: "スタンダード",
+        registeredAt: "2024-08-01",
+        lastLogin: "2024-10-20",
+        status: "体験",
+        contractStatus: "体験",
+        contractPeriod: "2024-08-01 〜 2024-11-01",
+        paymentMethod: "クレジットカード",
+        displayedArtworks: 3,
+        totalRevenue: 0,
+        displayHistory: 3,
+        spaces: 2,
+    },
 ];
-
 const mockArtists = [
-  {
-    id: "A001",
-    nameJa: "山田 美咲",
-    nameEn: "Misaki Yamada",
-    address: "東京都世田谷区",
-    sns: "@misaki_art",
-    portfolio: "https://misakiart.com",
-    genre: ["抽象画", "ミニマル"],
-    artworks: 12,
-    displayCount: 34,
-    contractType: "専属",
-    revenueShare: "80%",
-    priceRange: "¥30,000 - ¥80,000",
-    leasePrice: "¥8,000/月",
-    monthlyRevenue: 96000,
-    paymentStatus: "支払済み",
-    taxStatus: "源泉要",
-    rightsChecked: true,
-    agreementFile: "agreement_A001.pdf",
-    registeredAt: "2024-01-15",
-  },
-  {
-    id: "A002",
-    nameJa: "佐藤 健太",
-    nameEn: "Kenta Sato",
-    address: "神奈川県横浜市",
-    sns: "@kenta_photo",
-    portfolio: "https://kentaphoto.jp",
-    genre: ["写真", "風景"],
-    artworks: 8,
-    displayCount: 22,
-    contractType: "非専属",
-    revenueShare: "70%",
-    priceRange: "¥40,000 - ¥100,000",
-    leasePrice: "¥10,000/月",
-    monthlyRevenue: 70000,
-    paymentStatus: "支払済み",
-    taxStatus: "免税",
-    rightsChecked: true,
-    agreementFile: "agreement_A002.pdf",
-    registeredAt: "2024-02-20",
-  },
-  {
-    id: "A003",
-    nameJa: "鈴木 彩",
-    nameEn: "Aya Suzuki",
-    address: "大阪府大阪市",
-    sns: "@aya_modern",
-    portfolio: "https://ayaart.com",
-    genre: ["版画", "抽象画"],
-    artworks: 6,
-    displayCount: 15,
-    contractType: "専属",
-    revenueShare: "80%",
-    priceRange: "¥25,000 - ¥60,000",
-    leasePrice: "¥7,000/月",
-    monthlyRevenue: 42000,
-    paymentStatus: "未払い",
-    taxStatus: "源泉要",
-    rightsChecked: true,
-    agreementFile: "agreement_A003.pdf",
-    registeredAt: "2024-04-10",
-  },
+    {
+        id: "A001",
+        nameJa: "山田 美咲",
+        nameEn: "Misaki Yamada",
+        address: "東京都世田谷区",
+        sns: "@misaki_art",
+        portfolio: "https://misakiart.com",
+        genre: ["抽象画", "ミニマル"],
+        artworks: 12,
+        displayCount: 34,
+        contractType: "専属",
+        revenueShare: "80%",
+        priceRange: "¥30,000 - ¥80,000",
+        leasePrice: "¥8,000/月",
+        monthlyRevenue: 96000,
+        paymentStatus: "支払済み",
+        taxStatus: "源泉要",
+        rightsChecked: true,
+        agreementFile: "agreement_A001.pdf",
+        registeredAt: "2024-01-15",
+    },
+    {
+        id: "A002",
+        nameJa: "佐藤 健太",
+        nameEn: "Kenta Sato",
+        address: "神奈川県横浜市",
+        sns: "@kenta_photo",
+        portfolio: "https://kentaphoto.jp",
+        genre: ["写真", "風景"],
+        artworks: 8,
+        displayCount: 22,
+        contractType: "非専属",
+        revenueShare: "70%",
+        priceRange: "¥40,000 - ¥100,000",
+        leasePrice: "¥10,000/月",
+        monthlyRevenue: 70000,
+        paymentStatus: "支払済み",
+        taxStatus: "免税",
+        rightsChecked: true,
+        agreementFile: "agreement_A002.pdf",
+        registeredAt: "2024-02-20",
+    },
+    {
+        id: "A003",
+        nameJa: "鈴木 彩",
+        nameEn: "Aya Suzuki",
+        address: "大阪府大阪市",
+        sns: "@aya_modern",
+        portfolio: "https://ayaart.com",
+        genre: ["版画", "抽象画"],
+        artworks: 6,
+        displayCount: 15,
+        contractType: "専属",
+        revenueShare: "80%",
+        priceRange: "¥25,000 - ¥60,000",
+        leasePrice: "¥7,000/月",
+        monthlyRevenue: 42000,
+        paymentStatus: "未払い",
+        taxStatus: "源泉要",
+        rightsChecked: true,
+        agreementFile: "agreement_A003.pdf",
+        registeredAt: "2024-04-10",
+    },
 ];
-
 const mockArtworks = [
-  {
-    id: "AW001",
-    title: "静寂の朝",
-    artistId: "A001",
-    artistName: "山田 美咲",
-    size: "72.7 × 53.0 cm",
-    weight: "2.5kg",
-    category: "絵画",
-    condition: "良好",
-    status: "展示中",
-    corporateName: "株式会社グローバルホテルズ",
-    salePrice: 65000,
-    leasePrice: 8000,
-    mgjFee: "20%",
-    artistShare: "80%",
-    image: "https://images.unsplash.com/photo-1541961017774-22349e4a1262?w=400",
-    packageSize: "M",
-    handling: "直射日光を避けてください",
-    insurance: true,
-    displayedAt: "2024-09-01",
-  },
-  {
-    id: "AW002",
-    title: "都市の夕暮れ",
-    artistId: "A002",
-    artistName: "佐藤 健太",
-    size: "80.0 × 60.0 cm",
-    weight: "3.0kg",
-    category: "写真",
-    condition: "良好",
-    status: "展示中",
-    corporateName: "テックオフィス株式会社",
-    salePrice: 85000,
-    leasePrice: 10000,
-    mgjFee: "20%",
-    artistShare: "80%",
-    image: "https://images.unsplash.com/photo-1518640165713-ddf87c2f3eb4?w=400",
-    packageSize: "L",
-    handling: "温度・湿度に注意",
-    insurance: true,
-    displayedAt: "2024-08-15",
-  },
-  {
-    id: "AW003",
-    title: "抽象の記憶",
-    artistId: "A003",
-    artistName: "鈴木 彩",
-    size: "60.0 × 60.0 cm",
-    weight: "2.0kg",
-    category: "版画",
-    condition: "良好",
-    status: "返却中",
-    corporateName: "-",
-    salePrice: 45000,
-    leasePrice: 7000,
-    mgjFee: "20%",
-    artistShare: "80%",
-    image: "https://images.unsplash.com/photo-1549887534-1541e9326642?w=400",
-    packageSize: "M",
-    handling: "特になし",
-    insurance: false,
-    displayedAt: "-",
-  },
-  {
-    id: "AW004",
-    title: "光の軌跡",
-    artistId: "A001",
-    artistName: "山田 美咲",
-    size: "90.0 × 70.0 cm",
-    weight: "4.0kg",
-    category: "絵画",
-    condition: "要補修",
-    status: "点検中",
-    corporateName: "-",
-    salePrice: 120000,
-    leasePrice: 12000,
-    mgjFee: "20%",
-    artistShare: "80%",
-    image: "https://images.unsplash.com/photo-1577083553790-2f20c6d4a569?w=400",
-    packageSize: "L",
-    handling: "取扱注意",
-    insurance: true,
-    displayedAt: "-",
-  },
+    {
+        id: "AW001",
+        title: "静寂の朝",
+        artistId: "A001",
+        artistName: "山田 美咲",
+        size: "72.7 × 53.0 cm",
+        weight: "2.5kg",
+        category: "絵画",
+        condition: "良好",
+        status: "展示中",
+        corporateName: "株式会社グローバルホテルズ",
+        salePrice: 65000,
+        leasePrice: 8000,
+        mgjFee: "20%",
+        artistShare: "80%",
+        image: "https://images.unsplash.com/photo-1541961017774-22349e4a1262?w=400",
+        packageSize: "M",
+        handling: "直射日光を避けてください",
+        insurance: true,
+        displayedAt: "2024-09-01",
+    },
+    {
+        id: "AW002",
+        title: "都市の夕暮れ",
+        artistId: "A002",
+        artistName: "佐藤 健太",
+        size: "80.0 × 60.0 cm",
+        weight: "3.0kg",
+        category: "写真",
+        condition: "良好",
+        status: "展示中",
+        corporateName: "テックオフィス株式会社",
+        salePrice: 85000,
+        leasePrice: 10000,
+        mgjFee: "20%",
+        artistShare: "80%",
+        image: "https://images.unsplash.com/photo-1518640165713-ddf87c2f3eb4?w=400",
+        packageSize: "L",
+        handling: "温度・湿度に注意",
+        insurance: true,
+        displayedAt: "2024-08-15",
+    },
+    {
+        id: "AW003",
+        title: "抽象の記憶",
+        artistId: "A003",
+        artistName: "鈴木 彩",
+        size: "60.0 × 60.0 cm",
+        weight: "2.0kg",
+        category: "版画",
+        condition: "良好",
+        status: "返却中",
+        corporateName: "-",
+        salePrice: 45000,
+        leasePrice: 7000,
+        mgjFee: "20%",
+        artistShare: "80%",
+        image: "https://images.unsplash.com/photo-1549887534-1541e9326642?w=400",
+        packageSize: "M",
+        handling: "特になし",
+        insurance: false,
+        displayedAt: "-",
+    },
+    {
+        id: "AW004",
+        title: "光の軌跡",
+        artistId: "A001",
+        artistName: "山田 美咲",
+        size: "90.0 × 70.0 cm",
+        weight: "4.0kg",
+        category: "絵画",
+        condition: "要補修",
+        status: "点検中",
+        corporateName: "-",
+        salePrice: 120000,
+        leasePrice: 12000,
+        mgjFee: "20%",
+        artistShare: "80%",
+        image: "https://images.unsplash.com/photo-1577083553790-2f20c6d4a569?w=400",
+        packageSize: "L",
+        handling: "取扱注意",
+        insurance: true,
+        displayedAt: "-",
+    },
 ];
-
 const mockSpaces = [
-  {
-    id: "S001",
-    name: "1階メインロビー",
-    corporateId: "C001",
-    corporateName: "株式会社グローバルホテルズ",
-    location: "東京都港区六本木1-1-1",
-    type: "エントランス",
-    currentDisplayed: 2,
-    displayHistory: 8,
-    images: [
-      "https://images.unsplash.com/photo-1497366216548-37526070297c?w=800",
-      "https://images.unsplash.com/photo-1497366811353-6870744d04b2?w=800",
-    ],
-    registeredAt: "2024-03-15",
-  },
-  {
-    id: "S002",
-    name: "2階会議室前廊下",
-    corporateId: "C001",
-    corporateName: "株式会社グローバルホテルズ",
-    location: "東京都港区六本木1-1-1",
-    type: "廊下",
-    currentDisplayed: 3,
-    displayHistory: 12,
-    images: [
-      "https://images.unsplash.com/photo-1497366754035-f200968a6e72?w=800",
-    ],
-    registeredAt: "2024-03-15",
-  },
-  {
-    id: "S003",
-    name: "3階VIPラウンジ",
-    corporateId: "C001",
-    corporateName: "株式会社グローバルホテルズ",
-    location: "東京都港区六本木1-1-1",
-    type: "ラウンジ",
-    currentDisplayed: 2,
-    displayHistory: 6,
-    images: [
-      "https://images.unsplash.com/photo-1497366412874-3415097a27e7?w=800",
-      "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=800",
-    ],
-    registeredAt: "2024-03-20",
-  },
-  {
-    id: "S004",
-    name: "エントランスホール",
-    corporateId: "C002",
-    corporateName: "テックオフィス株式会社",
-    location: "東京都渋谷区道玄坂2-2-2",
-    type: "エントランス",
-    currentDisplayed: 2,
-    displayHistory: 5,
-    images: [
-      "https://images.unsplash.com/photo-1497366811353-6870744d04b2?w=800",
-    ],
-    registeredAt: "2024-05-20",
-  },
-  {
-    id: "S005",
-    name: "会議室A",
-    corporateId: "C002",
-    corporateName: "テックオフィス株式会社",
-    location: "東京都渋谷区道玄坂2-2-2",
-    type: "会議室",
-    currentDisplayed: 2,
-    displayHistory: 4,
-    images: [
-      "https://images.unsplash.com/photo-1497366754035-f200968a6e72?w=800",
-    ],
-    registeredAt: "2024-05-25",
-  },
-  {
-    id: "S006",
-    name: "待合室",
-    corporateId: "C003",
-    corporateName: "メディカルケアクリニック",
-    location: "大阪府大阪市北区梅田3-3-3",
-    type: "待合室",
-    currentDisplayed: 1,
-    displayHistory: 3,
-    images: [
-      "https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?w=800",
-    ],
-    registeredAt: "2024-08-01",
-  },
+    {
+        id: "S001",
+        name: "1階メインロビー",
+        corporateId: "C001",
+        corporateName: "株式会社グローバルホテルズ",
+        location: "東京都港区六本木1-1-1",
+        type: "エントランス",
+        currentDisplayed: 2,
+        displayHistory: 8,
+        images: [
+            "https://images.unsplash.com/photo-1497366216548-37526070297c?w=800",
+            "https://images.unsplash.com/photo-1497366811353-6870744d04b2?w=800",
+        ],
+        registeredAt: "2024-03-15",
+    },
+    {
+        id: "S002",
+        name: "2階会議室前廊下",
+        corporateId: "C001",
+        corporateName: "株式会社グローバルホテルズ",
+        location: "東京都港区六本木1-1-1",
+        type: "廊下",
+        currentDisplayed: 3,
+        displayHistory: 12,
+        images: [
+            "https://images.unsplash.com/photo-1497366754035-f200968a6e72?w=800",
+        ],
+        registeredAt: "2024-03-15",
+    },
+    {
+        id: "S003",
+        name: "3階VIPラウンジ",
+        corporateId: "C001",
+        corporateName: "株式会社グローバルホテルズ",
+        location: "東京都港区六本木1-1-1",
+        type: "ラウンジ",
+        currentDisplayed: 2,
+        displayHistory: 6,
+        images: [
+            "https://images.unsplash.com/photo-1497366412874-3415097a27e7?w=800",
+            "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=800",
+        ],
+        registeredAt: "2024-03-20",
+    },
+    {
+        id: "S004",
+        name: "エントランスホール",
+        corporateId: "C002",
+        corporateName: "テックオフィス株式会社",
+        location: "東京都渋谷区道玄坂2-2-2",
+        type: "エントランス",
+        currentDisplayed: 2,
+        displayHistory: 5,
+        images: [
+            "https://images.unsplash.com/photo-1497366811353-6870744d04b2?w=800",
+        ],
+        registeredAt: "2024-05-20",
+    },
+    {
+        id: "S005",
+        name: "会議室A",
+        corporateId: "C002",
+        corporateName: "テックオフィス株式会社",
+        location: "東京都渋谷区道玄坂2-2-2",
+        type: "会議室",
+        currentDisplayed: 2,
+        displayHistory: 4,
+        images: [
+            "https://images.unsplash.com/photo-1497366754035-f200968a6e72?w=800",
+        ],
+        registeredAt: "2024-05-25",
+    },
+    {
+        id: "S006",
+        name: "待合室",
+        corporateId: "C003",
+        corporateName: "メディカルケアクリニック",
+        location: "大阪府大阪市北区梅田3-3-3",
+        type: "待合室",
+        currentDisplayed: 1,
+        displayHistory: 3,
+        images: [
+            "https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?w=800",
+        ],
+        registeredAt: "2024-08-01",
+    },
 ];
-
 const mockShipments = [
-  {
-    id: "SH001",
-    artworkId: "AW001",
-    artworkTitle: "静寂の朝",
-    type: "新規配送",
-    from: "山田 美咲（東京都世田谷区）",
-    to: "株式会社グローバルホテルズ（東京本社・1階ロビー）",
-    carrier: "ヤマト運輸",
-    trackingNumber: "1234-5678-9012",
-    status: "配送中",
-    estimatedDelivery: "2024-10-30",
-    packageSize: "M",
-    shippingCost: 1500,
-    insuranceCovered: true,
-  },
-  {
-    id: "SH002",
-    artworkId: "AW003",
-    artworkTitle: "抽象の記憶",
-    type: "返却",
-    from: "メディカルケアクリニック（大阪支社）",
-    to: "鈴木 彩（大阪府大阪市）",
-    carrier: "佐川急便",
-    trackingNumber: "9876-5432-1098",
-    status: "集荷待ち",
-    estimatedDelivery: "2024-11-01",
-    packageSize: "M",
-    shippingCost: 1200,
-    insuranceCovered: false,
-  },
-  {
-    id: "SH003",
-    artworkId: "AW004",
-    artworkTitle: "光の軌跡",
-    type: "返却（破損）",
-    from: "テックオフィス株式会社（渋谷オフィス）",
-    to: "山田 美咲（東京都世田谷区）",
-    carrier: "ヤマト運輸",
-    trackingNumber: "5555-6666-7777",
-    status: "配送完了",
-    estimatedDelivery: "2024-10-25",
-    packageSize: "L",
-    shippingCost: 2000,
-    insuranceCovered: true,
-  },
+    {
+        id: "SH001",
+        artworkId: "AW001",
+        artworkTitle: "静寂の朝",
+        type: "新規配送",
+        from: "山田 美咲（東京都世田谷区）",
+        to: "株式会社グローバルホテルズ（東京本社・1階ロビー）",
+        carrier: "ヤマト運輸",
+        trackingNumber: "1234-5678-9012",
+        status: "配送中",
+        estimatedDelivery: "2024-10-30",
+        packageSize: "M",
+        shippingCost: 1500,
+        insuranceCovered: true,
+    },
+    {
+        id: "SH002",
+        artworkId: "AW003",
+        artworkTitle: "抽象の記憶",
+        type: "返却",
+        from: "メディカルケアクリニック（大阪支社）",
+        to: "鈴木 彩（大阪府大阪市）",
+        carrier: "佐川急便",
+        trackingNumber: "9876-5432-1098",
+        status: "集荷待ち",
+        estimatedDelivery: "2024-11-01",
+        packageSize: "M",
+        shippingCost: 1200,
+        insuranceCovered: false,
+    },
+    {
+        id: "SH003",
+        artworkId: "AW004",
+        artworkTitle: "光の軌跡",
+        type: "返却（破損）",
+        from: "テックオフィス株式会社（渋谷オフィス）",
+        to: "山田 美咲（東京都世田谷区）",
+        carrier: "ヤマト運輸",
+        trackingNumber: "5555-6666-7777",
+        status: "配送完了",
+        estimatedDelivery: "2024-10-25",
+        packageSize: "L",
+        shippingCost: 2000,
+        insuranceCovered: true,
+    },
 ];
-
 const mockTransactions = [
-  {
-    id: "TX001",
-    date: "2024-10-15",
-    type: "売上",
-    corporateName: "株式会社グローバルホテルズ",
-    artistName: "山田 美咲",
-    artworkTitle: "静寂の朝",
-    amount: 65000,
-    mgjFee: 13000,
-    artistRevenue: 52000,
-    status: "完了",
-  },
-  {
-    id: "TX002",
-    date: "2024-10-20",
-    type: "リース料",
-    corporateName: "テックオフィス株式会社",
-    artistName: "佐藤 健太",
-    artworkTitle: "都市の夕暮れ",
-    amount: 10000,
-    mgjFee: 2000,
-    artistRevenue: 8000,
-    status: "完了",
-  },
-  {
-    id: "TX003",
-    date: "2024-10-28",
-    type: "送料",
-    corporateName: "メディカルケアクリニック",
-    artistName: "-",
-    artworkTitle: "抽象の記憶",
-    amount: 1200,
-    mgjFee: 1200,
-    artistRevenue: 0,
-    status: "請求中",
-  },
+    {
+        id: "TX001",
+        date: "2024-10-15",
+        type: "売上",
+        corporateName: "株式会社グローバルホテルズ",
+        artistName: "山田 美咲",
+        artworkTitle: "静寂の朝",
+        amount: 65000,
+        mgjFee: 13000,
+        artistRevenue: 52000,
+        status: "完了",
+    },
+    {
+        id: "TX002",
+        date: "2024-10-20",
+        type: "リース料",
+        corporateName: "テックオフィス株式会社",
+        artistName: "佐藤 健太",
+        artworkTitle: "都市の夕暮れ",
+        amount: 10000,
+        mgjFee: 2000,
+        artistRevenue: 8000,
+        status: "完了",
+    },
+    {
+        id: "TX003",
+        date: "2024-10-28",
+        type: "送料",
+        corporateName: "メディカルケアクリニック",
+        artistName: "-",
+        artworkTitle: "抽象の記憶",
+        amount: 1200,
+        mgjFee: 1200,
+        artistRevenue: 0,
+        status: "請求中",
+    },
 ];
-
 const mockContracts = [
-  {
-    id: "CT001",
-    type: "アーティスト契約",
-    partyName: "山田 美咲",
-    agreementType: "専属契約",
-    signedDate: "2024-01-15",
-    status: "有効",
-    document: "agreement_A001.pdf",
-    revenueShare: "80%",
-    commercialUse: "展示のみ",
-  },
-  {
-    id: "CT002",
-    type: "法人契約",
-    partyName: "株式会社グローバルホテルズ",
-    agreementType: "プレミアムプラン",
-    signedDate: "2024-03-15",
-    status: "有効",
-    document: "contract_C001.pdf",
-    revenueShare: "-",
-    commercialUse: "展示＋販売可",
-  },
-  {
-    id: "CT003",
-    type: "アーティスト契約",
-    partyName: "鈴木 彩",
-    agreementType: "専属契約",
-    signedDate: "2024-04-10",
-    status: "有効",
-    document: "agreement_A003.pdf",
-    revenueShare: "80%",
-    commercialUse: "展示のみ",
-  },
+    {
+        id: "CT001",
+        type: "アーティスト契約",
+        partyName: "山田 美咲",
+        agreementType: "専属契約",
+        signedDate: "2024-01-15",
+        status: "有効",
+        document: "agreement_A001.pdf",
+        revenueShare: "80%",
+        commercialUse: "展示のみ",
+    },
+    {
+        id: "CT002",
+        type: "法人契約",
+        partyName: "株式会社グローバルホテルズ",
+        agreementType: "プレミアムプラン",
+        signedDate: "2024-03-15",
+        status: "有効",
+        document: "contract_C001.pdf",
+        revenueShare: "-",
+        commercialUse: "展示＋販売可",
+    },
+    {
+        id: "CT003",
+        type: "アーティスト契約",
+        partyName: "鈴木 彩",
+        agreementType: "専属契約",
+        signedDate: "2024-04-10",
+        status: "有効",
+        document: "agreement_A003.pdf",
+        revenueShare: "80%",
+        commercialUse: "展示のみ",
+    },
 ];
-
 const mockSupport = [
-  {
-    id: "SUP001",
-    type: "破損報告",
-    reportedBy: "テックオフィス株式会社",
-    artworkTitle: "光の軌跡",
-    content: "配送中に額縁の角が破損しました",
-    status: "対応中",
-    assignedTo: "山田（MGJ）",
-    createdAt: "2024-10-25",
-    priority: "高",
-  },
-  {
-    id: "SUP002",
-    type: "著作権報告",
-    reportedBy: "匿名",
-    artworkTitle: "都市の夕暮れ",
-    content: "この作品は別の作家の作品に類似しています",
-    status: "受付",
-    assignedTo: "-",
-    createdAt: "2024-10-28",
-    priority: "中",
-  },
-  {
-    id: "SUP003",
-    type: "問い合わせ",
-    reportedBy: "メディカルケアクリニック",
-    artworkTitle: "-",
-    content: "契約内容の変更について相談したい",
-    status: "完了",
-    assignedTo: "佐藤（MGJ）",
-    createdAt: "2024-10-20",
-    priority: "低",
-  },
+    {
+        id: "SUP001",
+        type: "破損報告",
+        reportedBy: "テックオフィス株式会社",
+        artworkTitle: "光の軌跡",
+        content: "配送中に額縁の角が破損しました",
+        status: "対応中",
+        assignedTo: "山田（MGJ）",
+        createdAt: "2024-10-25",
+        priority: "高",
+    },
+    {
+        id: "SUP002",
+        type: "著作権報告",
+        reportedBy: "匿名",
+        artworkTitle: "都市の夕暮れ",
+        content: "この作品は別の作家の作品に類似しています",
+        status: "受付",
+        assignedTo: "-",
+        createdAt: "2024-10-28",
+        priority: "中",
+    },
+    {
+        id: "SUP003",
+        type: "問い合わせ",
+        reportedBy: "メディカルケアクリニック",
+        artworkTitle: "-",
+        content: "契約内容の変更について相談したい",
+        status: "完了",
+        assignedTo: "佐藤（MGJ）",
+        createdAt: "2024-10-20",
+        priority: "低",
+    },
 ];
-
 const mockUsers = [
-  {
-    id: "U001",
-    name: "山田 次郎",
-    email: "yamada@mgj.jp",
-    role: "管理者",
-    permissions: ["閲覧", "編集", "削除", "財務"],
-    lastLogin: "2024-10-29 09:30",
-    status: "アクティブ",
-    twoFactorEnabled: true,
-  },
-  {
-    id: "U002",
-    name: "佐藤 花子",
-    email: "sato@mgj.jp",
-    role: "スタッフ",
-    permissions: ["閲覧", "編集"],
-    lastLogin: "2024-10-28 14:20",
-    status: "アクティブ",
-    twoFactorEnabled: false,
-  },
-  {
-    id: "U003",
-    name: "鈴木 太郎",
-    email: "suzuki@external.jp",
-    role: "外部委託",
-    permissions: ["閲覧"],
-    lastLogin: "2024-10-27 11:00",
-    status: "アクティブ",
-    twoFactorEnabled: true,
-  },
+    {
+        id: "U001",
+        name: "山田 次郎",
+        email: "yamada@mgj.jp",
+        role: "管理者",
+        permissions: ["閲覧", "編集", "削除", "財務"],
+        lastLogin: "2024-10-29 09:30",
+        status: "アクティブ",
+        twoFactorEnabled: true,
+    },
+    {
+        id: "U002",
+        name: "佐藤 花子",
+        email: "sato@mgj.jp",
+        role: "スタッフ",
+        permissions: ["閲覧", "編集"],
+        lastLogin: "2024-10-28 14:20",
+        status: "アクティブ",
+        twoFactorEnabled: false,
+    },
+    {
+        id: "U003",
+        name: "鈴木 太郎",
+        email: "suzuki@external.jp",
+        role: "外部委託",
+        permissions: ["閲覧"],
+        lastLogin: "2024-10-27 11:00",
+        status: "アクティブ",
+        twoFactorEnabled: true,
+    },
 ];
-
 const mockReports = [
-  {
-    id: "R001",
-    artworkId: "1",
-    artworkTitle: "夏の思い出",
-    artistName: "山田 美咲",
-    reportedAt: "2024-10-28 10:30",
-    reportedBy: "匿名ユーザー",
-    reason: "AI生成物の未明示",
-    details: "この作品はAI技術を使用して生成された可能性が高いですが、作品情報にその記載がありません。明らかにAI特有の表現が見られます。",
-    status: "未対応",
-    priority: "高",
-  },
-  {
-    id: "R002",
-    artworkId: "2",
-    artworkTitle: "都市の夜",
-    artistName: "佐藤 健太",
-    reportedAt: "2024-10-27 15:45",
-    reportedBy: "匿名ユーザー",
-    reason: "著作権侵害",
-    details: "有名な写真家〇〇氏の作品「××」と酷似しており、著作権を侵害している可能性があります。",
-    status: "対応中",
-    priority: "高",
-  },
-  {
-    id: "R003",
-    artworkId: "3",
-    artworkTitle: "静寂",
-    artistName: "鈴木 美咲",
-    reportedAt: "2024-10-26 09:15",
-    reportedBy: "匿名ユーザー",
-    reason: "不適切な内容",
-    details: "過度に暴力的な表現が含まれており、公的空間への展示には不適切だと思います。",
-    status: "対応中",
-    priority: "中",
-  },
-  {
-    id: "R004",
-    artworkId: "4",
-    artworkTitle: "抽象的な対話",
-    artistName: "田中 一郎",
-    reportedAt: "2024-10-25 14:20",
-    reportedBy: "匿名ユーザー",
-    reason: "虚偽情報",
-    details: "作品の制作年や経歴に虚偽が含まれている可能性があります。",
-    status: "対応済み",
-    priority: "低",
-  },
-  {
-    id: "R005",
-    artworkId: "5",
-    artworkTitle: "光の粒子",
-    artistName: "高橋 花子",
-    reportedAt: "2024-10-24 11:00",
-    reportedBy: "匿名ユーザー",
-    reason: "その他",
-    details: "作品の説明と実際の作品が異なっているように見えます。",
-    status: "却下",
-    priority: "低",
-  },
+    {
+        id: "R001",
+        artworkId: "1",
+        artworkTitle: "夏の思い出",
+        artistName: "山田 美咲",
+        reportedAt: "2024-10-28 10:30",
+        reportedBy: "匿名ユーザー",
+        reason: "AI生成物の未明示",
+        details: "この作品はAI技術を使用して生成された可能性が高いですが、作品情報にその記載がありません。明らかにAI特有の表現が見られます。",
+        status: "未対応",
+        priority: "高",
+    },
+    {
+        id: "R002",
+        artworkId: "2",
+        artworkTitle: "都市の夜",
+        artistName: "佐藤 健太",
+        reportedAt: "2024-10-27 15:45",
+        reportedBy: "匿名ユーザー",
+        reason: "著作権侵害",
+        details: "有名な写真家〇〇氏の作品「××」と酷似しており、著作権を侵害している可能性があります。",
+        status: "対応中",
+        priority: "高",
+    },
+    {
+        id: "R003",
+        artworkId: "3",
+        artworkTitle: "静寂",
+        artistName: "鈴木 美咲",
+        reportedAt: "2024-10-26 09:15",
+        reportedBy: "匿名ユーザー",
+        reason: "不適切な内容",
+        details: "過度に暴力的な表現が含まれており、公的空間への展示には不適切だと思います。",
+        status: "対応中",
+        priority: "中",
+    },
+    {
+        id: "R004",
+        artworkId: "4",
+        artworkTitle: "抽象的な対話",
+        artistName: "田中 一郎",
+        reportedAt: "2024-10-25 14:20",
+        reportedBy: "匿名ユーザー",
+        reason: "虚偽情報",
+        details: "作品の制作年や経歴に虚偽が含まれている可能性があります。",
+        status: "対応済み",
+        priority: "低",
+    },
+    {
+        id: "R005",
+        artworkId: "5",
+        artworkTitle: "光の粒子",
+        artistName: "高橋 花子",
+        reportedAt: "2024-10-24 11:00",
+        reportedBy: "匿名ユーザー",
+        reason: "その他",
+        details: "作品の説明と実際の作品が異なっているように見えます。",
+        status: "却下",
+        priority: "低",
+    },
 ];
-
 export function AdminDashboard() {
-  const navigate = useNavigate();
-  const [activeSection, setActiveSection] = useState("dashboard");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCorporate, setSelectedCorporate] = useState<string | null>(null);
-  const [selectedArtist, setSelectedArtist] = useState<string | null>(null);
-  const [selectedSpace, setSelectedSpace] = useState<string | null>(null);
-  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
-
-  // セクション切り替え時に選択状態と検索クエリをリセット
-  useEffect(() => {
-    setSelectedCorporate(null);
-    setSelectedArtist(null);
-    setSelectedSpace(null);
-    setSearchQuery("");
-  }, [activeSection]);
-
-  // モバイルでセクション切り替え時にサイドバーを閉じる
-  useEffect(() => {
-    setIsMobileSidebarOpen(false);
-  }, [activeSection]);
-
-  const sections = [
-    { id: "dashboard", label: "ダッシュボード", icon: LayoutDashboard },
-    { id: "corporates", label: "法人", icon: Building2 },
-    { id: "artists", label: "アーティスト", icon: Palette },
-    { id: "artworks", label: "作品", icon: Image },
-    { id: "spaces", label: "スペース", icon: MapPinned },
-    { id: "displays", label: "展示", icon: MapPin },
-    { id: "shipping", label: "配送", icon: Truck },
-    { id: "transactions", label: "取引", icon: DollarSign },
-    { id: "contracts", label: "契約", icon: FileText },
-    { id: "reports", label: "通報管理", icon: Flag },
-    { id: "support", label: "サポート", icon: MessageSquare },
-    { id: "users", label: "権限", icon: Users },
-    { id: "analytics", label: "アナリティクス", icon: TrendingUp },
-    { id: "settings", label: "設定", icon: Settings },
-  ];
-
-  const getStatusBadge = (status: string) => {
-    const config: Record<string, string> = {
-      アクティブ: "bg-green-500",
-      体験: "bg-yellow-500",
-      停止: "bg-red-500",
-      契約中: "bg-green-500",
-      展示中: "bg-blue-500",
-      返却中: "bg-orange-500",
-      点検中: "bg-yellow-500",
-      良好: "bg-green-500",
-      要補修: "bg-red-500",
-      配送中: "bg-blue-500",
-      集荷待ち: "bg-yellow-500",
-      配送完了: "bg-green-500",
-      完了: "bg-green-500",
-      請求中: "bg-orange-500",
-      有効: "bg-green-500",
-      対応中: "bg-orange-500",
-      受付: "bg-blue-500",
+    const navigate = useNavigate();
+    const [activeSection, setActiveSection] = useState("dashboard");
+    const [searchQuery, setSearchQuery] = useState("");
+    const [selectedCorporate, setSelectedCorporate] = useState<string | null>(null);
+    const [selectedArtist, setSelectedArtist] = useState<string | null>(null);
+    const [selectedSpace, setSelectedSpace] = useState<string | null>(null);
+    const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+    useEffect(() => {
+        setSelectedCorporate(null);
+        setSelectedArtist(null);
+        setSelectedSpace(null);
+        setSearchQuery("");
+    }, [activeSection]);
+    useEffect(() => {
+        setIsMobileSidebarOpen(false);
+    }, [activeSection]);
+    const sections = [
+        { id: "dashboard", label: "ダッシュボード", icon: LayoutDashboard },
+        { id: "corporates", label: "法人", icon: Building2 },
+        { id: "artists", label: "アーティスト", icon: Palette },
+        { id: "artworks", label: "作品", icon: Image },
+        { id: "spaces", label: "スペース", icon: MapPinned },
+        { id: "displays", label: "展示", icon: MapPin },
+        { id: "shipping", label: "配送", icon: Truck },
+        { id: "transactions", label: "取引", icon: DollarSign },
+        { id: "contracts", label: "契約", icon: FileText },
+        { id: "reports", label: "通報管理", icon: Flag },
+        { id: "support", label: "サポート", icon: MessageSquare },
+        { id: "users", label: "権限", icon: Users },
+        { id: "analytics", label: "アナリティクス", icon: TrendingUp },
+        { id: "settings", label: "設定", icon: Settings },
+    ];
+    const getStatusBadge = (status: string) => {
+        const config: Record<string, string> = {
+            アクティブ: "bg-green-500",
+            体験: "bg-yellow-500",
+            停止: "bg-red-500",
+            契約中: "bg-green-500",
+            展示中: "bg-blue-500",
+            返却中: "bg-orange-500",
+            点検中: "bg-yellow-500",
+            良好: "bg-green-500",
+            要補修: "bg-red-500",
+            配送中: "bg-blue-500",
+            集荷待ち: "bg-yellow-500",
+            配送完了: "bg-green-500",
+            完了: "bg-green-500",
+            請求中: "bg-orange-500",
+            有効: "bg-green-500",
+            対応中: "bg-orange-500",
+            受付: "bg-blue-500",
+        };
+        return <Badge className={`${config[status] || "bg-gray-500"} text-white`}>{status}</Badge>;
     };
-
-    return <Badge className={`${config[status] || "bg-gray-500"} text-white`}>{status}</Badge>;
-  };
-
-  const getPriorityBadge = (priority: string) => {
-    const config: Record<string, string> = {
-      高: "bg-red-500",
-      中: "bg-yellow-500",
-      低: "bg-gray-500",
+    const getPriorityBadge = (priority: string) => {
+        const config: Record<string, string> = {
+            高: "bg-red-500",
+            中: "bg-yellow-500",
+            低: "bg-gray-500",
+        };
+        return <Badge className={`${config[priority] || "bg-gray-500"} text-white`}>{priority}</Badge>;
     };
-
-    return <Badge className={`${config[priority] || "bg-gray-500"} text-white`}>{priority}</Badge>;
-  };
-
-  // サイドバーコンテンツ（再利用可能）
-  const SidebarContent = () => (
-    <div className="p-4 w-full overflow-hidden">
+    const SidebarContent = () => (<div className="p-4 w-full overflow-hidden">
       <h2 className="px-3 mb-4 text-xs text-gray-500 uppercase tracking-wider">
         MGJ 管理画面
       </h2>
       <nav className="space-y-1">
         {sections.map((section) => {
-          const Icon = section.icon;
-          const isActive = activeSection === section.id;
-          return (
-            <button
-              key={section.id}
-              onClick={() => setActiveSection(section.id)}
-              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
-                isActive
-                  ? "bg-primary/10 text-primary"
-                  : "text-gray-600 hover:bg-gray-100"
-              }`}
-            >
-              <Icon className="w-5 h-5 flex-shrink-0" />
+            const Icon = section.icon;
+            const isActive = activeSection === section.id;
+            return (<button key={section.id} onClick={() => setActiveSection(section.id)} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${isActive
+                    ? "bg-primary/10 text-primary"
+                    : "text-gray-600 hover:bg-gray-100"}`}>
+              <Icon className="w-5 h-5 flex-shrink-0"/>
               <span className="truncate">{section.label}</span>
-              {isActive && <ChevronRight className="w-4 h-4 ml-auto flex-shrink-0" />}
-            </button>
-          );
+              {isActive && <ChevronRight className="w-4 h-4 ml-auto flex-shrink-0"/>}
+            </button>);
         })}
       </nav>
-    </div>
-  );
-
-  return (
-    <div className="min-h-screen bg-gray-50">
+    </div>);
+    return (<div className="min-h-screen bg-gray-50">
       <Header />
 
       <div className="pt-20 flex">
-        {/* デスクトップ左サイドバー */}
+        
         <aside className="hidden lg:block w-64 flex-shrink-0 flex-grow-0 bg-white border-r border-gray-200 min-h-[calc(100vh-5rem)] sticky top-20">
           <SidebarContent />
         </aside>
 
-        {/* モバイルサイドバー（Sheet） */}
+        
         <Sheet open={isMobileSidebarOpen} onOpenChange={setIsMobileSidebarOpen}>
           <SheetContent side="left" className="w-64 p-0">
             <SidebarContent />
           </SheetContent>
         </Sheet>
 
-        {/* メインコンテンツ */}
+        
         <main className="flex-1 p-4 sm:p-6 lg:p-8">
-          {/* モバイルメニューボタン */}
+          
           <div className="lg:hidden mb-4">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setIsMobileSidebarOpen(true)}
-              className="flex items-center gap-2"
-            >
-              <Menu className="w-4 h-4" />
+            <Button variant="outline" size="sm" onClick={() => setIsMobileSidebarOpen(true)} className="flex items-center gap-2">
+              <Menu className="w-4 h-4"/>
               <span>メニュー</span>
             </Button>
           </div>
-          {/* ダッシュボード */}
-          {activeSection === "dashboard" && (
-            <div className="space-y-6">
+          
+          {activeSection === "dashboard" && (<div className="space-y-6">
               <div>
                 <h1 className="text-2xl sm:text-3xl text-gray-900 mb-2">ダッシュボード</h1>
                 <p className="text-sm sm:text-base text-gray-600">システム全体の概要と重要な指標</p>
               </div>
 
-              {/* アラート */}
+              
               <div className="space-y-3">
-                {mockDashboardStats.alerts.map((alert) => (
-                  <Card
-                    key={alert.id}
-                    className={`border-l-4 ${
-                      alert.type === "error"
-                        ? "border-l-red-500 bg-red-50"
-                        : alert.type === "warning"
+                {mockDashboardStats.alerts.map((alert) => (<Card key={alert.id} className={`border-l-4 ${alert.type === "error"
+                    ? "border-l-red-500 bg-red-50"
+                    : alert.type === "warning"
                         ? "border-l-yellow-500 bg-yellow-50"
-                        : "border-l-blue-500 bg-blue-50"
-                    }`}
-                  >
+                        : "border-l-blue-500 bg-blue-50"}`}>
                     <CardContent className="p-4 flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <AlertCircle
-                          className={`w-5 h-5 ${
-                            alert.type === "error"
-                              ? "text-red-600"
-                              : alert.type === "warning"
-                              ? "text-yellow-600"
-                              : "text-blue-600"
-                          }`}
-                        />
+                        <AlertCircle className={`w-5 h-5 ${alert.type === "error"
+                    ? "text-red-600"
+                    : alert.type === "warning"
+                        ? "text-yellow-600"
+                        : "text-blue-600"}`}/>
                         <p className="text-sm text-gray-900">{alert.message}</p>
                       </div>
-                      <Badge
-                        className={`${
-                          alert.type === "error"
-                            ? "bg-red-500"
-                            : alert.type === "warning"
-                            ? "bg-yellow-500"
-                            : "bg-blue-500"
-                        } text-white`}
-                      >
+                      <Badge className={`${alert.type === "error"
+                    ? "bg-red-500"
+                    : alert.type === "warning"
+                        ? "bg-yellow-500"
+                        : "bg-blue-500"} text-white`}>
                         {alert.count}
                       </Badge>
                     </CardContent>
-                  </Card>
-                ))}
+                  </Card>))}
               </div>
 
-              {/* 統計カード */}
+              
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <Card>
                   <CardHeader className="pb-3">
@@ -940,58 +839,48 @@ export function AdminDashboard() {
                   </CardHeader>
                   <CardContent className="space-y-2">
                     <Button className="w-full justify-start" variant="outline">
-                      <Download className="w-4 h-4 mr-2" />
+                      <Download className="w-4 h-4 mr-2"/>
                       月次レポートをエクスポート
                     </Button>
                     <Button className="w-full justify-start" variant="outline">
-                      <FileText className="w-4 h-4 mr-2" />
+                      <FileText className="w-4 h-4 mr-2"/>
                       請求書を一括生成
                     </Button>
                     <Button className="w-full justify-start" variant="outline">
-                      <Mail className="w-4 h-4 mr-2" />
+                      <Mail className="w-4 h-4 mr-2"/>
                       リマインダーを送信
                     </Button>
                   </CardContent>
                 </Card>
               </div>
-            </div>
-          )}
+            </div>)}
 
-          {/* 法人管理 */}
-          {activeSection === "corporates" && (
-            <div className="space-y-6">
+          
+          {activeSection === "corporates" && (<div className="space-y-6">
               <div className="flex items-center justify-between">
                 <div>
                   <h1 className="text-2xl sm:text-3xl text-gray-900 mb-2">法人管理</h1>
                   <p className="text-gray-600">登録法人の情報と契約状況</p>
                 </div>
                 <div className="flex gap-2">
-                  {selectedCorporate && (
-                    <Button variant="outline" onClick={() => setSelectedCorporate(null)}>
+                  {selectedCorporate && (<Button variant="outline" onClick={() => setSelectedCorporate(null)}>
                       一覧に戻る
-                    </Button>
-                  )}
+                    </Button>)}
                   <Button>
-                    <Building2 className="w-4 h-4 mr-2" />
+                    <Building2 className="w-4 h-4 mr-2"/>
                     新規法人追加
                   </Button>
                 </div>
               </div>
 
-              {!selectedCorporate ? (
-                <Card>
+              {!selectedCorporate ? (<Card>
                   <CardHeader>
                     <div className="flex items-center justify-between">
                       <CardTitle>法人一覧</CardTitle>
                       <div className="flex gap-2">
-                        <IDSearchInput
-                          value={searchQuery}
-                          onChange={setSearchQuery}
-                          placeholder="ID検索 (例: CO-00001) または法人名"
-                          className="w-80"
-                        />
+                        <IDSearchInput value={searchQuery} onChange={setSearchQuery} placeholder="ID検索 (例: CO-00001) または法人名" className="w-80"/>
                         <Button variant="outline" size="sm">
-                          <Download className="w-4 h-4 mr-2" />
+                          <Download className="w-4 h-4 mr-2"/>
                           CSV
                         </Button>
                       </div>
@@ -1016,14 +905,9 @@ export function AdminDashboard() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                        {mockCorporates.map((corp) => (
-                          <TableRow
-                            key={corp.id}
-                            className="cursor-pointer hover:bg-gray-50 transition-colors"
-                            onClick={() => setSelectedCorporate(corp.id)}
-                          >
+                        {mockCorporates.map((corp) => (<TableRow key={corp.id} className="cursor-pointer hover:bg-gray-50 transition-colors" onClick={() => setSelectedCorporate(corp.id)}>
                             <TableCell onClick={(e) => e.stopPropagation()}>
-                              <IDDisplay type="corporate" numericId={corp.id.replace('C', '')} size="sm" />
+                              <IDDisplay type="corporate" numericId={corp.id.replace('C', '')} size="sm"/>
                             </TableCell>
                             <TableCell>
                               <div>
@@ -1049,43 +933,32 @@ export function AdminDashboard() {
                             <TableCell>{getStatusBadge(corp.status)}</TableCell>
                             <TableCell onClick={(e) => e.stopPropagation()}>
                               <div className="flex gap-1">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => setSelectedCorporate(corp.id)}
-                                >
-                                  <Eye className="w-4 h-4" />
+                                <Button variant="ghost" size="sm" onClick={() => setSelectedCorporate(corp.id)}>
+                                  <Eye className="w-4 h-4"/>
                                 </Button>
                                 <Button variant="ghost" size="sm">
-                                  <Edit className="w-4 h-4" />
+                                  <Edit className="w-4 h-4"/>
                                 </Button>
                               </div>
                             </TableCell>
-                          </TableRow>
-                        ))}
+                          </TableRow>))}
                           </TableBody>
                         </Table>
                       </div>
                     </div>
                   </CardContent>
-                </Card>
-              ) : (
-                <>
+                </Card>) : (<>
                   {(() => {
                     const corp = mockCorporates.find((c) => c.id === selectedCorporate);
-                    if (!corp) return null;
-
-                    const displayedArtworks = mockArtworks.filter(
-                      (a) => a.corporateName === corp.name && a.status === "展示中"
-                    );
-
-                    return (
-                      <div className="space-y-6">
-                        {/* 基本情報 */}
+                    if (!corp)
+                        return null;
+                    const displayedArtworks = mockArtworks.filter((a) => a.corporateName === corp.name && a.status === "展示中");
+                    return (<div className="space-y-6">
+                        
                         <Card>
                           <CardHeader>
                             <CardTitle className="flex items-center gap-2">
-                              <Building2 className="w-5 h-5" />
+                              <Building2 className="w-5 h-5"/>
                               基本情報
                             </CardTitle>
                           </CardHeader>
@@ -1145,11 +1018,11 @@ export function AdminDashboard() {
                           </CardContent>
                         </Card>
 
-                        {/* 契約情報 */}
+                        
                         <Card>
                           <CardHeader>
                             <CardTitle className="flex items-center gap-2">
-                              <FileText className="w-5 h-5" />
+                              <FileText className="w-5 h-5"/>
                               契約・請求情報
                             </CardTitle>
                           </CardHeader>
@@ -1187,31 +1060,20 @@ export function AdminDashboard() {
                           </CardContent>
                         </Card>
 
-                        {/* 現在展示中の作品 */}
+                        
                         <Card>
                           <CardHeader>
                             <CardTitle className="flex items-center gap-2">
-                              <Image className="w-5 h-5" />
+                              <Image className="w-5 h-5"/>
                               現在展示中の作品 ({displayedArtworks.length}件)
                             </CardTitle>
                           </CardHeader>
                           <CardContent>
-                            {displayedArtworks.length === 0 ? (
-                              <div className="text-center py-8 text-gray-500">
+                            {displayedArtworks.length === 0 ? (<div className="text-center py-8 text-gray-500">
                                 現在展示中の作品はありません
-                              </div>
-                            ) : (
-                              <div className="space-y-4">
-                                {displayedArtworks.map((artwork) => (
-                                  <div
-                                    key={artwork.id}
-                                    className="flex items-center gap-4 p-4 border border-gray-200 rounded-lg hover:border-primary transition-colors"
-                                  >
-                                    <img
-                                      src={artwork.image}
-                                      alt={artwork.title}
-                                      className="w-24 h-24 object-cover rounded"
-                                    />
+                              </div>) : (<div className="space-y-4">
+                                {displayedArtworks.map((artwork) => (<div key={artwork.id} className="flex items-center gap-4 p-4 border border-gray-200 rounded-lg hover:border-primary transition-colors">
+                                    <img src={artwork.image} alt={artwork.title} className="w-24 h-24 object-cover rounded"/>
                                     <div className="flex-1">
                                       <div className="flex items-start justify-between mb-2">
                                         <div>
@@ -1242,62 +1104,44 @@ export function AdminDashboard() {
                                         <p className="text-xs text-gray-500">展示開始日: {artwork.displayedAt}</p>
                                       </div>
                                     </div>
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={() => navigate(`/artwork/${artwork.id}`)}
-                                    >
+                                    <Button variant="outline" size="sm" onClick={() => navigate(`/artwork/${artwork.id}`)}>
                                       詳細
                                     </Button>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
+                                  </div>))}
+                              </div>)}
                           </CardContent>
                         </Card>
-                      </div>
-                    );
-                  })()}
-                </>
-              )}
-            </div>
-          )}
+                      </div>);
+                })()}
+                </>)}
+            </div>)}
 
-          {/* アーティスト管理 */}
-          {activeSection === "artists" && (
-            <div className="space-y-6">
+          
+          {activeSection === "artists" && (<div className="space-y-6">
               <div className="flex items-center justify-between">
                 <div>
                   <h1 className="text-2xl sm:text-3xl text-gray-900 mb-2">アーティスト管理</h1>
                   <p className="text-gray-600">登録アーティストの情報と契約状況</p>
                 </div>
                 <div className="flex gap-2">
-                  {selectedArtist && (
-                    <Button variant="outline" onClick={() => setSelectedArtist(null)}>
+                  {selectedArtist && (<Button variant="outline" onClick={() => setSelectedArtist(null)}>
                       一覧に戻る
-                    </Button>
-                  )}
+                    </Button>)}
                   <Button>
-                    <Palette className="w-4 h-4 mr-2" />
+                    <Palette className="w-4 h-4 mr-2"/>
                     新規アーティスト追加
                   </Button>
                 </div>
               </div>
 
-              {!selectedArtist ? (
-                <Card>
+              {!selectedArtist ? (<Card>
                   <CardHeader>
                     <div className="flex items-center justify-between">
                       <CardTitle>アーティスト一覧</CardTitle>
                       <div className="flex gap-2">
-                        <IDSearchInput
-                          value={searchQuery}
-                          onChange={setSearchQuery}
-                          placeholder="ID検索 (例: AR-00001) または名前"
-                          className="w-80"
-                        />
+                        <IDSearchInput value={searchQuery} onChange={setSearchQuery} placeholder="ID検索 (例: AR-00001) または名前" className="w-80"/>
                         <Button variant="outline" size="sm">
-                          <Download className="w-4 h-4 mr-2" />
+                          <Download className="w-4 h-4 mr-2"/>
                           CSV
                         </Button>
                       </div>
@@ -1322,14 +1166,9 @@ export function AdminDashboard() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                        {mockArtists.map((artist) => (
-                          <TableRow
-                            key={artist.id}
-                            className="cursor-pointer hover:bg-gray-50 transition-colors"
-                            onClick={() => setSelectedArtist(artist.id)}
-                          >
+                        {mockArtists.map((artist) => (<TableRow key={artist.id} className="cursor-pointer hover:bg-gray-50 transition-colors" onClick={() => setSelectedArtist(artist.id)}>
                             <TableCell onClick={(e) => e.stopPropagation()}>
-                              <IDDisplay type="artist" numericId={artist.id.replace('A', '')} size="sm" />
+                              <IDDisplay type="artist" numericId={artist.id.replace('A', '')} size="sm"/>
                             </TableCell>
                             <TableCell>
                               <div>
@@ -1340,11 +1179,9 @@ export function AdminDashboard() {
                             <TableCell className="text-sm">{artist.address}</TableCell>
                             <TableCell>
                               <div className="flex gap-1 flex-wrap">
-                                {artist.genre.map((g, i) => (
-                                  <Badge key={i} variant="secondary" className="text-xs">
+                                {artist.genre.map((g, i) => (<Badge key={i} variant="secondary" className="text-xs">
                                     {g}
-                                  </Badge>
-                                ))}
+                                  </Badge>))}
                               </div>
                             </TableCell>
                             <TableCell>{artist.artworks}点</TableCell>
@@ -1356,51 +1193,36 @@ export function AdminDashboard() {
                             </TableCell>
                             <TableCell>¥{artist.monthlyRevenue.toLocaleString()}</TableCell>
                             <TableCell>
-                              {artist.paymentStatus === "支払済み" ? (
-                                <Badge className="bg-green-500 text-white">支払済み</Badge>
-                              ) : (
-                                <Badge className="bg-red-500 text-white">未払い</Badge>
-                              )}
+                              {artist.paymentStatus === "支払済み" ? (<Badge className="bg-green-500 text-white">支払済み</Badge>) : (<Badge className="bg-red-500 text-white">未払い</Badge>)}
                             </TableCell>
                             <TableCell onClick={(e) => e.stopPropagation()}>
                               <div className="flex gap-1">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => setSelectedArtist(artist.id)}
-                                >
-                                  <Eye className="w-4 h-4" />
+                                <Button variant="ghost" size="sm" onClick={() => setSelectedArtist(artist.id)}>
+                                  <Eye className="w-4 h-4"/>
                                 </Button>
                                 <Button variant="ghost" size="sm">
-                                  <Edit className="w-4 h-4" />
+                                  <Edit className="w-4 h-4"/>
                                 </Button>
                               </div>
                             </TableCell>
-                          </TableRow>
-                        ))}
+                          </TableRow>))}
                           </TableBody>
                         </Table>
                       </div>
                     </div>
                   </CardContent>
-                </Card>
-              ) : (
-                <>
+                </Card>) : (<>
                   {(() => {
                     const artist = mockArtists.find((a) => a.id === selectedArtist);
-                    if (!artist) return null;
-
-                    const artistArtworks = mockArtworks.filter(
-                      (a) => a.artistId === artist.id
-                    );
-
-                    return (
-                      <div className="space-y-6">
-                        {/* 基本情報 */}
+                    if (!artist)
+                        return null;
+                    const artistArtworks = mockArtworks.filter((a) => a.artistId === artist.id);
+                    return (<div className="space-y-6">
+                        
                         <Card>
                           <CardHeader>
                             <CardTitle className="flex items-center gap-2">
-                              <Palette className="w-5 h-5" />
+                              <Palette className="w-5 h-5"/>
                               プロフィール
                             </CardTitle>
                           </CardHeader>
@@ -1429,12 +1251,7 @@ export function AdminDashboard() {
                                 </div>
                                 <div>
                                   <label className="text-xs text-gray-500">ポートフォリオ</label>
-                                  <a
-                                    href={artist.portfolio}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-sm text-primary hover:underline"
-                                  >
+                                  <a href={artist.portfolio} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline">
                                     {artist.portfolio}
                                   </a>
                                 </div>
@@ -1443,11 +1260,9 @@ export function AdminDashboard() {
                                 <div>
                                   <label className="text-xs text-gray-500">ジャンル・スタイル</label>
                                   <div className="flex gap-1 flex-wrap mt-1">
-                                    {artist.genre.map((g, i) => (
-                                      <Badge key={i} variant="secondary">
+                                    {artist.genre.map((g, i) => (<Badge key={i} variant="secondary">
                                         {g}
-                                      </Badge>
-                                    ))}
+                                      </Badge>))}
                                   </div>
                                 </div>
                                 <div>
@@ -1467,11 +1282,11 @@ export function AdminDashboard() {
                           </CardContent>
                         </Card>
 
-                        {/* 契約・報酬情報 */}
+                        
                         <Card>
                           <CardHeader>
                             <CardTitle className="flex items-center gap-2">
-                              <FileText className="w-5 h-5" />
+                              <FileText className="w-5 h-5"/>
                               契約・報酬情報
                             </CardTitle>
                           </CardHeader>
@@ -1509,11 +1324,7 @@ export function AdminDashboard() {
                                 <div>
                                   <label className="text-xs text-gray-500">支払状況</label>
                                   <div>
-                                    {artist.paymentStatus === "支払済み" ? (
-                                      <Badge className="bg-green-500 text-white">支払済み</Badge>
-                                    ) : (
-                                      <Badge className="bg-red-500 text-white">未払い</Badge>
-                                    )}
+                                    {artist.paymentStatus === "支払済み" ? (<Badge className="bg-green-500 text-white">支払済み</Badge>) : (<Badge className="bg-red-500 text-white">未払い</Badge>)}
                                   </div>
                                 </div>
                                 <div>
@@ -1525,11 +1336,11 @@ export function AdminDashboard() {
                           </CardContent>
                         </Card>
 
-                        {/* 権利・安全情報 */}
+                        
                         <Card>
                           <CardHeader>
                             <CardTitle className="flex items-center gap-2">
-                              <CheckCircle className="w-5 h-5" />
+                              <CheckCircle className="w-5 h-5"/>
                               権利・安全情報
                             </CardTitle>
                           </CardHeader>
@@ -1538,17 +1349,13 @@ export function AdminDashboard() {
                               <div>
                                 <label className="text-xs text-gray-500">作品権利確認</label>
                                 <div className="mt-1">
-                                  {artist.rightsChecked ? (
-                                    <Badge className="bg-green-500 text-white">確認済み</Badge>
-                                  ) : (
-                                    <Badge className="bg-red-500 text-white">未確認</Badge>
-                                  )}
+                                  {artist.rightsChecked ? (<Badge className="bg-green-500 text-white">確認済み</Badge>) : (<Badge className="bg-red-500 text-white">未確認</Badge>)}
                                 </div>
                               </div>
                               <div>
                                 <label className="text-xs text-gray-500">同意書ファイル</label>
                                 <Button variant="ghost" size="sm" className="mt-1 h-auto p-0">
-                                  <FileText className="w-4 h-4 mr-1" />
+                                  <FileText className="w-4 h-4 mr-1"/>
                                   <span className="text-xs">{artist.agreementFile}</span>
                                 </Button>
                               </div>
@@ -1556,31 +1363,20 @@ export function AdminDashboard() {
                           </CardContent>
                         </Card>
 
-                        {/* 登録作品一覧 */}
+                        
                         <Card>
                           <CardHeader>
                             <CardTitle className="flex items-center gap-2">
-                              <Image className="w-5 h-5" />
+                              <Image className="w-5 h-5"/>
                               登録作品一覧 ({artistArtworks.length}点)
                             </CardTitle>
                           </CardHeader>
                           <CardContent>
-                            {artistArtworks.length === 0 ? (
-                              <div className="text-center py-8 text-gray-500">
+                            {artistArtworks.length === 0 ? (<div className="text-center py-8 text-gray-500">
                                 登録作品がありません
-                              </div>
-                            ) : (
-                              <div className="space-y-4">
-                                {artistArtworks.map((artwork) => (
-                                  <div
-                                    key={artwork.id}
-                                    className="flex items-center gap-4 p-4 border border-gray-200 rounded-lg hover:border-primary transition-colors"
-                                  >
-                                    <img
-                                      src={artwork.image}
-                                      alt={artwork.title}
-                                      className="w-24 h-24 object-cover rounded"
-                                    />
+                              </div>) : (<div className="space-y-4">
+                                {artistArtworks.map((artwork) => (<div key={artwork.id} className="flex items-center gap-4 p-4 border border-gray-200 rounded-lg hover:border-primary transition-colors">
+                                    <img src={artwork.image} alt={artwork.title} className="w-24 h-24 object-cover rounded"/>
                                     <div className="flex-1">
                                       <div className="flex items-start justify-between mb-2">
                                         <div>
@@ -1615,55 +1411,39 @@ export function AdminDashboard() {
                                         </div>
                                       </div>
                                       <div className="mt-2 flex items-center gap-4 text-xs">
-                                        {artwork.status === "展示中" && (
-                                          <p className="text-gray-600">
+                                        {artwork.status === "展示中" && (<p className="text-gray-600">
                                             展示先: <span className="font-medium">{artwork.corporateName}</span>
-                                          </p>
-                                        )}
-                                        {artwork.displayedAt !== "-" && (
-                                          <p className="text-gray-600">
+                                          </p>)}
+                                        {artwork.displayedAt !== "-" && (<p className="text-gray-600">
                                             展示開始: {artwork.displayedAt}
-                                          </p>
-                                        )}
+                                          </p>)}
                                         <p className="text-gray-600">
                                           梱包サイズ: {artwork.packageSize}
                                         </p>
-                                        {artwork.insurance && (
-                                          <Badge variant="outline" className="text-xs">保険適用</Badge>
-                                        )}
+                                        {artwork.insurance && (<Badge variant="outline" className="text-xs">保険適用</Badge>)}
                                       </div>
                                     </div>
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={() => navigate(`/artwork/${artwork.id}`)}
-                                    >
+                                    <Button variant="outline" size="sm" onClick={() => navigate(`/artwork/${artwork.id}`)}>
                                       詳細
                                     </Button>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
+                                  </div>))}
+                              </div>)}
                           </CardContent>
                         </Card>
-                      </div>
-                    );
-                  })()}
-                </>
-              )}
-            </div>
-          )}
+                      </div>);
+                })()}
+                </>)}
+            </div>)}
 
-          {/* 作品管理 */}
-          {activeSection === "artworks" && (
-            <div className="space-y-6">
+          
+          {activeSection === "artworks" && (<div className="space-y-6">
               <div className="flex items-center justify-between">
                 <div>
                   <h1 className="text-2xl sm:text-3xl text-gray-900 mb-2">作品管理</h1>
                   <p className="text-gray-600">登録作品の情報とステータス</p>
                 </div>
                 <Button>
-                  <Image className="w-4 h-4 mr-2" />
+                  <Image className="w-4 h-4 mr-2"/>
                   新規作品追加
                 </Button>
               </div>
@@ -1673,12 +1453,7 @@ export function AdminDashboard() {
                   <div className="flex items-center justify-between">
                     <CardTitle>作品一覧</CardTitle>
                     <div className="flex gap-2">
-                      <IDSearchInput
-                        value={searchQuery}
-                        onChange={setSearchQuery}
-                        placeholder="ID検索 (例: AW-00001) または作品名"
-                        className="w-80"
-                      />
+                      <IDSearchInput value={searchQuery} onChange={setSearchQuery} placeholder="ID検索 (例: AW-00001) または作品名" className="w-80"/>
                       <Select defaultValue="all">
                         <SelectTrigger className="w-32">
                           <SelectValue />
@@ -1691,7 +1466,7 @@ export function AdminDashboard() {
                         </SelectContent>
                       </Select>
                       <Button variant="outline" size="sm">
-                        <Download className="w-4 h-4 mr-2" />
+                        <Download className="w-4 h-4 mr-2"/>
                         CSV
                       </Button>
                     </div>
@@ -1717,10 +1492,9 @@ export function AdminDashboard() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                      {mockArtworks.map((artwork) => (
-                        <TableRow key={artwork.id}>
+                      {mockArtworks.map((artwork) => (<TableRow key={artwork.id}>
                           <TableCell>
-                            <IDDisplay type="artwork" numericId={artwork.id.replace('W', '')} size="sm" />
+                            <IDDisplay type="artwork" numericId={artwork.id.replace('W', '')} size="sm"/>
                           </TableCell>
                           <TableCell className="font-medium">{artwork.title}</TableCell>
                           <TableCell className="text-sm">{artwork.artistName}</TableCell>
@@ -1735,64 +1509,49 @@ export function AdminDashboard() {
                           <TableCell>{getStatusBadge(artwork.status)}</TableCell>
                           <TableCell>
                             <div className="flex gap-1">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => navigate(`/artwork/${artwork.id}`)}
-                              >
-                                <Eye className="w-4 h-4" />
+                              <Button variant="ghost" size="sm" onClick={() => navigate(`/artwork/${artwork.id}`)}>
+                                <Eye className="w-4 h-4"/>
                               </Button>
                               <Button variant="ghost" size="sm">
-                                <Edit className="w-4 h-4" />
+                                <Edit className="w-4 h-4"/>
                               </Button>
                             </div>
                           </TableCell>
-                        </TableRow>
-                      ))}
+                        </TableRow>))}
                         </TableBody>
                       </Table>
                     </div>
                   </div>
                 </CardContent>
               </Card>
-            </div>
-          )}
+            </div>)}
 
-          {/* スペース管理 */}
-          {activeSection === "spaces" && (
-            <div className="space-y-6">
+          
+          {activeSection === "spaces" && (<div className="space-y-6">
               <div className="flex items-center justify-between">
                 <div>
                   <h1 className="text-2xl sm:text-3xl text-gray-900 mb-2">スペース管理</h1>
                   <p className="text-gray-600">展示スペースの情報と状況</p>
                 </div>
                 <div className="flex gap-2">
-                  {selectedSpace && (
-                    <Button variant="outline" onClick={() => setSelectedSpace(null)}>
+                  {selectedSpace && (<Button variant="outline" onClick={() => setSelectedSpace(null)}>
                       一覧に戻る
-                    </Button>
-                  )}
+                    </Button>)}
                   <Button>
-                    <MapPinned className="w-4 h-4 mr-2" />
+                    <MapPinned className="w-4 h-4 mr-2"/>
                     新規スペース追加
                   </Button>
                 </div>
               </div>
 
-              {!selectedSpace ? (
-                <Card>
+              {!selectedSpace ? (<Card>
                   <CardHeader>
                     <div className="flex items-center justify-between">
                       <CardTitle>スペース一覧</CardTitle>
                       <div className="flex gap-2">
-                        <IDSearchInput
-                          value={searchQuery}
-                          onChange={setSearchQuery}
-                          placeholder="ID検索 (例: SP-00001) またはスペース名"
-                          className="w-80"
-                        />
+                        <IDSearchInput value={searchQuery} onChange={setSearchQuery} placeholder="ID検索 (例: SP-00001) またはスペース名" className="w-80"/>
                         <Button variant="outline" size="sm">
-                          <Download className="w-4 h-4 mr-2" />
+                          <Download className="w-4 h-4 mr-2"/>
                           CSV
                         </Button>
                       </div>
@@ -1815,14 +1574,9 @@ export function AdminDashboard() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                        {mockSpaces.map((space) => (
-                          <TableRow
-                            key={space.id}
-                            className="cursor-pointer hover:bg-gray-50 transition-colors"
-                            onClick={() => setSelectedSpace(space.id)}
-                          >
+                        {mockSpaces.map((space) => (<TableRow key={space.id} className="cursor-pointer hover:bg-gray-50 transition-colors" onClick={() => setSelectedSpace(space.id)}>
                             <TableCell onClick={(e) => e.stopPropagation()}>
-                              <IDDisplay type="space" numericId={space.id.replace('S', '')} size="sm" />
+                              <IDDisplay type="space" numericId={space.id.replace('S', '')} size="sm"/>
                             </TableCell>
                             <TableCell>
                               <div>
@@ -1843,43 +1597,32 @@ export function AdminDashboard() {
                             <TableCell className="text-sm">{space.registeredAt}</TableCell>
                             <TableCell onClick={(e) => e.stopPropagation()}>
                               <div className="flex gap-1">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => setSelectedSpace(space.id)}
-                                >
-                                  <Eye className="w-4 h-4" />
+                                <Button variant="ghost" size="sm" onClick={() => setSelectedSpace(space.id)}>
+                                  <Eye className="w-4 h-4"/>
                                 </Button>
                                 <Button variant="ghost" size="sm">
-                                  <Edit className="w-4 h-4" />
+                                  <Edit className="w-4 h-4"/>
                                 </Button>
                               </div>
                             </TableCell>
-                          </TableRow>
-                        ))}
+                          </TableRow>))}
                           </TableBody>
                         </Table>
                       </div>
                     </div>
                   </CardContent>
-                </Card>
-              ) : (
-                <>
+                </Card>) : (<>
                   {(() => {
                     const space = mockSpaces.find((s) => s.id === selectedSpace);
-                    if (!space) return null;
-
-                    const displayedArtworks = mockArtworks.filter(
-                      (a) => a.corporateName === space.corporateName && a.status === "展示中"
-                    );
-
-                    return (
-                      <div className="space-y-6">
-                        {/* 基本情報 */}
+                    if (!space)
+                        return null;
+                    const displayedArtworks = mockArtworks.filter((a) => a.corporateName === space.corporateName && a.status === "展示中");
+                    return (<div className="space-y-6">
+                        
                         <Card>
                           <CardHeader>
                             <CardTitle className="flex items-center gap-2">
-                              <MapPinned className="w-5 h-5" />
+                              <MapPinned className="w-5 h-5"/>
                               スペース基本情報
                             </CardTitle>
                           </CardHeader>
@@ -1919,37 +1662,28 @@ export function AdminDashboard() {
                           </CardContent>
                         </Card>
 
-                        {/* スペース写真 */}
+                        
                         <Card>
                           <CardHeader>
                             <CardTitle className="flex items-center gap-2">
-                              <Image className="w-5 h-5" />
+                              <Image className="w-5 h-5"/>
                               スペース写真
                             </CardTitle>
                           </CardHeader>
                           <CardContent>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              {space.images.map((img, index) => (
-                                <div
-                                  key={index}
-                                  className="aspect-video rounded-lg overflow-hidden border border-gray-200"
-                                >
-                                  <img
-                                    src={img}
-                                    alt={`${space.name} - ${index + 1}`}
-                                    className="w-full h-full object-cover"
-                                  />
-                                </div>
-                              ))}
+                              {space.images.map((img, index) => (<div key={index} className="aspect-video rounded-lg overflow-hidden border border-gray-200">
+                                  <img src={img} alt={`${space.name} - ${index + 1}`} className="w-full h-full object-cover"/>
+                                </div>))}
                             </div>
                           </CardContent>
                         </Card>
 
-                        {/* 展示統計 */}
+                        
                         <Card>
                           <CardHeader>
                             <CardTitle className="flex items-center gap-2">
-                              <BarChart3 className="w-5 h-5" />
+                              <BarChart3 className="w-5 h-5"/>
                               展示統計
                             </CardTitle>
                           </CardHeader>
@@ -1967,41 +1701,23 @@ export function AdminDashboard() {
                           </CardContent>
                         </Card>
 
-                        {/* QRコード管理 */}
-                        <QRCodeManager
-                          spaceId={space.id}
-                          spaceName={space.name}
-                          currentArtworkId={displayedArtworks[0]?.id}
-                          currentArtworkTitle={displayedArtworks[0]?.title}
-                          qrCodeUrl={`${window.location.origin}/artwork/${displayedArtworks[0]?.id || "1"}?source=qr`}
-                        />
+                        
+                        <QRCodeManager spaceId={space.id} spaceName={space.name} currentArtworkId={displayedArtworks[0]?.id} currentArtworkTitle={displayedArtworks[0]?.title} qrCodeUrl={`${window.location.origin}/artwork/${displayedArtworks[0]?.id || "1"}?source=qr`}/>
 
-                        {/* 現在展示中の作品 */}
+                        
                         <Card>
                           <CardHeader>
                             <CardTitle className="flex items-center gap-2">
-                              <Image className="w-5 h-5" />
+                              <Image className="w-5 h-5"/>
                               現在展示中の作品 ({displayedArtworks.length}件)
                             </CardTitle>
                           </CardHeader>
                           <CardContent>
-                            {displayedArtworks.length === 0 ? (
-                              <div className="text-center py-8 text-gray-500">
+                            {displayedArtworks.length === 0 ? (<div className="text-center py-8 text-gray-500">
                                 現在展示中の作品はありません
-                              </div>
-                            ) : (
-                              <div className="space-y-4">
-                                {displayedArtworks.slice(0, space.currentDisplayed).map((artwork) => (
-                                  <div
-                                    key={artwork.id}
-                                    className="flex items-center gap-4 p-4 border border-gray-200 rounded-lg hover:border-primary transition-colors cursor-pointer"
-                                    onClick={() => navigate(`/artwork/${artwork.id}`)}
-                                  >
-                                    <img
-                                      src={artwork.image}
-                                      alt={artwork.title}
-                                      className="w-24 h-24 object-cover rounded"
-                                    />
+                              </div>) : (<div className="space-y-4">
+                                {displayedArtworks.slice(0, space.currentDisplayed).map((artwork) => (<div key={artwork.id} className="flex items-center gap-4 p-4 border border-gray-200 rounded-lg hover:border-primary transition-colors cursor-pointer" onClick={() => navigate(`/artwork/${artwork.id}`)}>
+                                    <img src={artwork.image} alt={artwork.title} className="w-24 h-24 object-cover rounded"/>
                                     <div className="flex-1">
                                       <div className="flex items-start justify-between mb-2">
                                         <div>
@@ -2029,23 +1745,17 @@ export function AdminDashboard() {
                                         </div>
                                       </div>
                                     </div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
+                                  </div>))}
+                              </div>)}
                           </CardContent>
                         </Card>
-                      </div>
-                    );
-                  })()}
-                </>
-              )}
-            </div>
-          )}
+                      </div>);
+                })()}
+                </>)}
+            </div>)}
 
-          {/* 展示管理 */}
-          {activeSection === "displays" && (
-            <div className="space-y-6">
+          
+          {activeSection === "displays" && (<div className="space-y-6">
               <div>
                 <h1 className="text-2xl sm:text-3xl text-gray-900 mb-2">展示管理</h1>
                 <p className="text-gray-600">各法人の展示マップとスケジュール</p>
@@ -2056,11 +1766,7 @@ export function AdminDashboard() {
                   <CardTitle>法人別展示状況</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {mockCorporates.map((corp) => (
-                    <div
-                      key={corp.id}
-                      className="p-4 border border-gray-200 rounded-lg hover:border-primary transition-colors cursor-pointer"
-                    >
+                  {mockCorporates.map((corp) => (<div key={corp.id} className="p-4 border border-gray-200 rounded-lg hover:border-primary transition-colors cursor-pointer">
                       <div className="flex items-center justify-between mb-3">
                         <div>
                           <h3 className="font-medium text-gray-900">{corp.name}</h3>
@@ -2074,36 +1780,26 @@ export function AdminDashboard() {
                         </div>
                       </div>
                       <div className="grid grid-cols-5 gap-2">
-                        {Array.from({ length: corp.spaces }).map((_, i) => (
-                          <div
-                            key={i}
-                            className={`h-20 rounded border-2 flex items-center justify-center text-xs ${
-                              i < corp.displayedArtworks
-                                ? "border-green-500 bg-green-50 text-green-700"
-                                : "border-gray-300 bg-gray-50 text-gray-500"
-                            }`}
-                          >
+                        {Array.from({ length: corp.spaces }).map((_, i) => (<div key={i} className={`h-20 rounded border-2 flex items-center justify-center text-xs ${i < corp.displayedArtworks
+                        ? "border-green-500 bg-green-50 text-green-700"
+                        : "border-gray-300 bg-gray-50 text-gray-500"}`}>
                             {i < corp.displayedArtworks ? `展示${i + 1}` : "空き"}
-                          </div>
-                        ))}
+                          </div>))}
                       </div>
-                    </div>
-                  ))}
+                    </div>))}
                 </CardContent>
               </Card>
-            </div>
-          )}
+            </div>)}
 
-          {/* 配送管理 */}
-          {activeSection === "shipping" && (
-            <div className="space-y-6">
+          
+          {activeSection === "shipping" && (<div className="space-y-6">
               <div className="flex items-center justify-between">
                 <div>
                   <h1 className="text-2xl sm:text-3xl text-gray-900 mb-2">配送管理</h1>
                   <p className="text-gray-600">輸送状況と配送履歴</p>
                 </div>
                 <Button>
-                  <Truck className="w-4 h-4 mr-2" />
+                  <Truck className="w-4 h-4 mr-2"/>
                   新規配送手配
                 </Button>
               </div>
@@ -2113,14 +1809,9 @@ export function AdminDashboard() {
                   <div className="flex items-center justify-between">
                     <CardTitle>配送一覧</CardTitle>
                     <div className="flex gap-2">
-                      <IDSearchInput
-                        value={searchQuery}
-                        onChange={setSearchQuery}
-                        placeholder="ID検索 (例: DL-00001) または追跡番号"
-                        className="w-80"
-                      />
+                      <IDSearchInput value={searchQuery} onChange={setSearchQuery} placeholder="ID検索 (例: DL-00001) または追跡番号" className="w-80"/>
                       <Button variant="outline" size="sm">
-                        <Download className="w-4 h-4 mr-2" />
+                        <Download className="w-4 h-4 mr-2"/>
                         CSV
                       </Button>
                     </div>
@@ -2146,22 +1837,17 @@ export function AdminDashboard() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                      {mockShipments.map((shipment) => (
-                        <TableRow key={shipment.id}>
+                      {mockShipments.map((shipment) => (<TableRow key={shipment.id}>
                           <TableCell>
-                            <IDDisplay type="delivery" numericId={shipment.id.replace('D', '')} size="sm" />
+                            <IDDisplay type="delivery" numericId={shipment.id.replace('D', '')} size="sm"/>
                           </TableCell>
                           <TableCell className="font-medium">{shipment.artworkTitle}</TableCell>
                           <TableCell>
-                            <Badge
-                              variant={
-                                shipment.type === "新規配送"
-                                  ? "default"
-                                  : shipment.type === "返却"
-                                  ? "secondary"
-                                  : "destructive"
-                              }
-                            >
+                            <Badge variant={shipment.type === "新規配送"
+                    ? "default"
+                    : shipment.type === "返却"
+                        ? "secondary"
+                        : "destructive"}>
                               {shipment.type}
                             </Badge>
                           </TableCell>
@@ -2177,27 +1863,24 @@ export function AdminDashboard() {
                           <TableCell>
                             <div className="flex gap-1">
                               <Button variant="ghost" size="sm">
-                                <Eye className="w-4 h-4" />
+                                <Eye className="w-4 h-4"/>
                               </Button>
                               <Button variant="ghost" size="sm">
-                                <Edit className="w-4 h-4" />
+                                <Edit className="w-4 h-4"/>
                               </Button>
                             </div>
                           </TableCell>
-                        </TableRow>
-                      ))}
+                        </TableRow>))}
                         </TableBody>
                       </Table>
                     </div>
                   </div>
                 </CardContent>
               </Card>
-            </div>
-          )}
+            </div>)}
 
-          {/* 取引管理 */}
-          {activeSection === "transactions" && (
-            <div className="space-y-6">
+          
+          {activeSection === "transactions" && (<div className="space-y-6">
               <div>
                 <h1 className="text-2xl sm:text-3xl text-gray-900 mb-2">取引管理</h1>
                 <p className="text-gray-600">売上・リース料・報酬の管理</p>
@@ -2256,7 +1939,7 @@ export function AdminDashboard() {
                         </SelectContent>
                       </Select>
                       <Button variant="outline" size="sm">
-                        <Download className="w-4 h-4 mr-2" />
+                        <Download className="w-4 h-4 mr-2"/>
                         CSV
                       </Button>
                     </div>
@@ -2281,8 +1964,7 @@ export function AdminDashboard() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                      {mockTransactions.map((tx) => (
-                        <TableRow key={tx.id}>
+                      {mockTransactions.map((tx) => (<TableRow key={tx.id}>
                           <TableCell className="font-mono text-xs">{tx.id}</TableCell>
                           <TableCell className="text-sm">{tx.date}</TableCell>
                           <TableCell>
@@ -2299,27 +1981,24 @@ export function AdminDashboard() {
                             ¥{tx.artistRevenue.toLocaleString()}
                           </TableCell>
                           <TableCell>{getStatusBadge(tx.status)}</TableCell>
-                        </TableRow>
-                      ))}
+                        </TableRow>))}
                         </TableBody>
                       </Table>
                     </div>
                   </div>
                 </CardContent>
               </Card>
-            </div>
-          )}
+            </div>)}
 
-          {/* 契約管理 */}
-          {activeSection === "contracts" && (
-            <div className="space-y-6">
+          
+          {activeSection === "contracts" && (<div className="space-y-6">
               <div className="flex items-center justify-between">
                 <div>
                   <h1 className="text-2xl sm:text-3xl text-gray-900 mb-2">契約管理</h1>
                   <p className="text-gray-600">利用規約と契約書の管理</p>
                 </div>
                 <Button>
-                  <FileText className="w-4 h-4 mr-2" />
+                  <FileText className="w-4 h-4 mr-2"/>
                   新規契約作成
                 </Button>
               </div>
@@ -2340,7 +2019,7 @@ export function AdminDashboard() {
                         </SelectContent>
                       </Select>
                       <Button variant="outline" size="sm">
-                        <Download className="w-4 h-4 mr-2" />
+                        <Download className="w-4 h-4 mr-2"/>
                         CSV
                       </Button>
                     </div>
@@ -2365,15 +2044,10 @@ export function AdminDashboard() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                      {mockContracts.map((contract) => (
-                        <TableRow key={contract.id}>
+                      {mockContracts.map((contract) => (<TableRow key={contract.id}>
                           <TableCell className="font-mono text-xs">{contract.id}</TableCell>
                           <TableCell>
-                            <Badge
-                              variant={
-                                contract.type === "アーティスト契約" ? "default" : "secondary"
-                              }
-                            >
+                            <Badge variant={contract.type === "アーティスト契約" ? "default" : "secondary"}>
                               {contract.type}
                             </Badge>
                           </TableCell>
@@ -2384,7 +2058,7 @@ export function AdminDashboard() {
                           <TableCell className="text-sm">{contract.commercialUse}</TableCell>
                           <TableCell>
                             <Button variant="ghost" size="sm">
-                              <FileText className="w-4 h-4 mr-1" />
+                              <FileText className="w-4 h-4 mr-1"/>
                               {contract.document}
                             </Button>
                           </TableCell>
@@ -2392,33 +2066,30 @@ export function AdminDashboard() {
                           <TableCell>
                             <div className="flex gap-1">
                               <Button variant="ghost" size="sm">
-                                <Eye className="w-4 h-4" />
+                                <Eye className="w-4 h-4"/>
                               </Button>
                               <Button variant="ghost" size="sm">
-                                <Edit className="w-4 h-4" />
+                                <Edit className="w-4 h-4"/>
                               </Button>
                             </div>
                           </TableCell>
-                        </TableRow>
-                      ))}
+                        </TableRow>))}
                         </TableBody>
                       </Table>
                     </div>
                   </div>
                 </CardContent>
               </Card>
-            </div>
-          )}
+            </div>)}
 
-          {/* 通報管理 */}
-          {activeSection === "reports" && (
-            <div className="space-y-6">
+          
+          {activeSection === "reports" && (<div className="space-y-6">
               <div>
                 <h1 className="text-2xl sm:text-3xl text-gray-900 mb-2">通報管理</h1>
                 <p className="text-gray-600">不適切な作品の通報を管理</p>
               </div>
 
-              {/* 統計サマリー */}
+              
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 <Card>
                   <CardContent className="p-6">
@@ -2430,7 +2101,7 @@ export function AdminDashboard() {
                         </p>
                       </div>
                       <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
-                        <AlertCircle className="w-6 h-6 text-red-600" />
+                        <AlertCircle className="w-6 h-6 text-red-600"/>
                       </div>
                     </div>
                   </CardContent>
@@ -2446,7 +2117,7 @@ export function AdminDashboard() {
                         </p>
                       </div>
                       <div className="w-12 h-12 rounded-full bg-yellow-100 flex items-center justify-center">
-                        <Clock className="w-6 h-6 text-yellow-600" />
+                        <Clock className="w-6 h-6 text-yellow-600"/>
                       </div>
                     </div>
                   </CardContent>
@@ -2462,7 +2133,7 @@ export function AdminDashboard() {
                         </p>
                       </div>
                       <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center">
-                        <CheckCircle className="w-6 h-6 text-green-600" />
+                        <CheckCircle className="w-6 h-6 text-green-600"/>
                       </div>
                     </div>
                   </CardContent>
@@ -2478,34 +2149,29 @@ export function AdminDashboard() {
                         </p>
                       </div>
                       <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center">
-                        <XCircle className="w-6 h-6 text-gray-600" />
+                        <XCircle className="w-6 h-6 text-gray-600"/>
                       </div>
                     </div>
                   </CardContent>
                 </Card>
               </div>
 
-              {/* 通報一覧 */}
+              
               <Card>
                 <CardHeader>
                   <CardTitle>通報一覧</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    {/* 検索・フィルター */}
+                    
                     <div className="flex gap-4">
                       <div className="flex-1 relative">
-                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                        <Input
-                          placeholder="作品名、アーティスト名で検索..."
-                          value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                          className="pl-10"
-                        />
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4"/>
+                        <Input placeholder="作品名、アーティスト名で検索..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10"/>
                       </div>
                       <Select defaultValue="all">
                         <SelectTrigger className="w-40">
-                          <SelectValue placeholder="ステータス" />
+                          <SelectValue placeholder="ステータス"/>
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="all">すべて</SelectItem>
@@ -2517,7 +2183,7 @@ export function AdminDashboard() {
                       </Select>
                     </div>
 
-                    {/* テーブル */}
+                    
                     <div className="border rounded-lg">
                       <Table>
                         <TableHeader>
@@ -2532,8 +2198,7 @@ export function AdminDashboard() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {mockReports.map((report) => (
-                            <TableRow key={report.id}>
+                          {mockReports.map((report) => (<TableRow key={report.id}>
                               <TableCell className="font-mono text-sm">
                                 {report.id}
                               </TableCell>
@@ -2552,30 +2217,22 @@ export function AdminDashboard() {
                                 </div>
                               </TableCell>
                               <TableCell>
-                                <Badge
-                                  className={
-                                    report.priority === "高"
-                                      ? "bg-red-100 text-red-700"
-                                      : report.priority === "中"
-                                      ? "bg-yellow-100 text-yellow-700"
-                                      : "bg-gray-100 text-gray-700"
-                                  }
-                                >
+                                <Badge className={report.priority === "高"
+                    ? "bg-red-100 text-red-700"
+                    : report.priority === "中"
+                        ? "bg-yellow-100 text-yellow-700"
+                        : "bg-gray-100 text-gray-700"}>
                                   {report.priority}
                                 </Badge>
                               </TableCell>
                               <TableCell>
-                                <Badge
-                                  className={
-                                    report.status === "未対応"
-                                      ? "bg-red-100 text-red-700"
-                                      : report.status === "対応中"
-                                      ? "bg-yellow-100 text-yellow-700"
-                                      : report.status === "対応済み"
-                                      ? "bg-green-100 text-green-700"
-                                      : "bg-gray-100 text-gray-700"
-                                  }
-                                >
+                                <Badge className={report.status === "未対応"
+                    ? "bg-red-100 text-red-700"
+                    : report.status === "対応中"
+                        ? "bg-yellow-100 text-yellow-700"
+                        : report.status === "対応済み"
+                            ? "bg-green-100 text-green-700"
+                            : "bg-gray-100 text-gray-700"}>
                                   {report.status}
                                 </Badge>
                               </TableCell>
@@ -2584,55 +2241,35 @@ export function AdminDashboard() {
                               </TableCell>
                               <TableCell>
                                 <div className="flex gap-2">
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => {
-                                      console.log("通報詳細:", report.id);
-                                      // ここで詳細モーダルを開く
-                                    }}
-                                  >
-                                    <Eye className="w-4 h-4" />
+                                  <Button size="sm" variant="outline" onClick={() => {
+                    console.log("通報詳細:", report.id);
+                }}>
+                                    <Eye className="w-4 h-4"/>
                                   </Button>
-                                  {report.status === "未対応" && (
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      className="text-blue-600 hover:text-blue-700"
-                                      onClick={() => {
-                                        console.log("対応開始:", report.id);
-                                      }}
-                                    >
+                                  {report.status === "未対応" && (<Button size="sm" variant="outline" className="text-blue-600 hover:text-blue-700" onClick={() => {
+                        console.log("対応開始:", report.id);
+                    }}>
                                       対応開始
-                                    </Button>
-                                  )}
-                                  {(report.status === "未対応" || report.status === "対応中") && (
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      className="text-red-600 hover:text-red-700"
-                                      onClick={() => {
-                                        if (confirm("この作品を削除しますか？")) {
-                                          console.log("作品削除:", report.artworkId);
-                                        }
-                                      }}
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </Button>
-                                  )}
+                                    </Button>)}
+                                  {(report.status === "未対応" || report.status === "対応中") && (<Button size="sm" variant="outline" className="text-red-600 hover:text-red-700" onClick={() => {
+                        if (confirm("この作品を削除しますか？")) {
+                            console.log("作品削除:", report.artworkId);
+                        }
+                    }}>
+                                      <Trash2 className="w-4 h-4"/>
+                                    </Button>)}
                                 </div>
                               </TableCell>
-                            </TableRow>
-                          ))}
+                            </TableRow>))}
                         </TableBody>
                       </Table>
                     </div>
 
-                    {/* 対応ガイド */}
+                    
                     <Card className="border-2 border-blue-200 bg-gradient-to-r from-blue-50 to-transparent">
                       <CardContent className="p-6">
                         <div className="flex gap-4">
-                          <AlertCircle className="w-6 h-6 text-blue-600 flex-shrink-0 mt-1" />
+                          <AlertCircle className="w-6 h-6 text-blue-600 flex-shrink-0 mt-1"/>
                           <div className="space-y-3 text-sm text-gray-700 leading-relaxed">
                             <p><strong className="text-blue-700">通報対応の手順：</strong></p>
                             <ol className="list-decimal list-inside space-y-2 ml-4">
@@ -2649,12 +2286,10 @@ export function AdminDashboard() {
                   </div>
                 </CardContent>
               </Card>
-            </div>
-          )}
+            </div>)}
 
-          {/* サポート管理 */}
-          {activeSection === "support" && (
-            <div className="space-y-6">
+          
+          {activeSection === "support" && (<div className="space-y-6">
               <div>
                 <h1 className="text-2xl sm:text-3xl text-gray-900 mb-2">サポート管理</h1>
                 <p className="text-gray-600">通報・問い合わせ・トラブル対応</p>
@@ -2710,7 +2345,7 @@ export function AdminDashboard() {
                         </SelectContent>
                       </Select>
                       <Button variant="outline" size="sm">
-                        <Download className="w-4 h-4 mr-2" />
+                        <Download className="w-4 h-4 mr-2"/>
                         CSV
                       </Button>
                     </div>
@@ -2735,19 +2370,14 @@ export function AdminDashboard() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                      {mockSupport.map((support) => (
-                        <TableRow key={support.id}>
+                      {mockSupport.map((support) => (<TableRow key={support.id}>
                           <TableCell className="font-mono text-xs">{support.id}</TableCell>
                           <TableCell>
-                            <Badge
-                              variant={
-                                support.type === "破損報告"
-                                  ? "destructive"
-                                  : support.type === "著作権報告"
-                                  ? "default"
-                                  : "secondary"
-                              }
-                            >
+                            <Badge variant={support.type === "破損報告"
+                    ? "destructive"
+                    : support.type === "著作権報告"
+                        ? "default"
+                        : "secondary"}>
                               {support.type}
                             </Badge>
                           </TableCell>
@@ -2763,34 +2393,31 @@ export function AdminDashboard() {
                           <TableCell>
                             <div className="flex gap-1">
                               <Button variant="ghost" size="sm">
-                                <Eye className="w-4 h-4" />
+                                <Eye className="w-4 h-4"/>
                               </Button>
                               <Button variant="ghost" size="sm">
-                                <Edit className="w-4 h-4" />
+                                <Edit className="w-4 h-4"/>
                               </Button>
                             </div>
                           </TableCell>
-                        </TableRow>
-                      ))}
+                        </TableRow>))}
                         </TableBody>
                       </Table>
                     </div>
                   </div>
                 </CardContent>
               </Card>
-            </div>
-          )}
+            </div>)}
 
-          {/* 権限管理 */}
-          {activeSection === "users" && (
-            <div className="space-y-6">
+          
+          {activeSection === "users" && (<div className="space-y-6">
               <div className="flex items-center justify-between">
                 <div>
                   <h1 className="text-2xl sm:text-3xl text-gray-900 mb-2">権限管理</h1>
                   <p className="text-gray-600">管理者・スタッフアカウントの管理</p>
                 </div>
                 <Button>
-                  <Users className="w-4 h-4 mr-2" />
+                  <Users className="w-4 h-4 mr-2"/>
                   新規ユーザー追加
                 </Button>
               </div>
@@ -2817,66 +2444,52 @@ export function AdminDashboard() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                      {mockUsers.map((user) => (
-                        <TableRow key={user.id}>
+                      {mockUsers.map((user) => (<TableRow key={user.id}>
                           <TableCell className="font-mono text-xs">{user.id}</TableCell>
                           <TableCell className="font-medium">{user.name}</TableCell>
                           <TableCell className="text-sm">{user.email}</TableCell>
                           <TableCell>
-                            <Badge
-                              variant={
-                                user.role === "管理者"
-                                  ? "default"
-                                  : user.role === "スタッフ"
-                                  ? "secondary"
-                                  : "outline"
-                              }
-                            >
+                            <Badge variant={user.role === "管理者"
+                    ? "default"
+                    : user.role === "スタッフ"
+                        ? "secondary"
+                        : "outline"}>
                               {user.role}
                             </Badge>
                           </TableCell>
                           <TableCell>
                             <div className="flex gap-1 flex-wrap">
-                              {user.permissions.map((perm, i) => (
-                                <Badge key={i} variant="outline" className="text-xs">
+                              {user.permissions.map((perm, i) => (<Badge key={i} variant="outline" className="text-xs">
                                   {perm}
-                                </Badge>
-                              ))}
+                                </Badge>))}
                             </div>
                           </TableCell>
                           <TableCell className="text-xs">{user.lastLogin}</TableCell>
                           <TableCell>
-                            {user.twoFactorEnabled ? (
-                              <Badge className="bg-green-500 text-white">有効</Badge>
-                            ) : (
-                              <Badge variant="secondary">無効</Badge>
-                            )}
+                            {user.twoFactorEnabled ? (<Badge className="bg-green-500 text-white">有効</Badge>) : (<Badge variant="secondary">無効</Badge>)}
                           </TableCell>
                           <TableCell>{getStatusBadge(user.status)}</TableCell>
                           <TableCell>
                             <div className="flex gap-1">
                               <Button variant="ghost" size="sm">
-                                <Edit className="w-4 h-4" />
+                                <Edit className="w-4 h-4"/>
                               </Button>
                               <Button variant="ghost" size="sm" className="text-red-600">
-                                <Trash2 className="w-4 h-4" />
+                                <Trash2 className="w-4 h-4"/>
                               </Button>
                             </div>
                           </TableCell>
-                        </TableRow>
-                      ))}
+                        </TableRow>))}
                         </TableBody>
                       </Table>
                     </div>
                   </div>
                 </CardContent>
               </Card>
-            </div>
-          )}
+            </div>)}
 
-          {/* アナリティクス */}
-          {activeSection === "analytics" && (
-            <div className="space-y-6">
+          
+          {activeSection === "analytics" && (<div className="space-y-6">
               <div>
                 <h1 className="text-2xl sm:text-3xl text-gray-900 mb-2">アナリティクス</h1>
                 <p className="text-gray-600">データ分析とビジネスインサイト</p>
@@ -3016,27 +2629,20 @@ export function AdminDashboard() {
                 </CardHeader>
                 <CardContent>
                   <div className="h-64 flex items-end justify-around gap-2">
-                    {[320000, 380000, 420000, 450000, 410000, 456000].map((amount, i) => (
-                      <div key={i} className="flex-1 flex flex-col items-center gap-2">
-                        <div
-                          className="w-full bg-primary rounded-t"
-                          style={{ height: `${(amount / 500000) * 100}%` }}
-                        ></div>
+                    {[320000, 380000, 420000, 450000, 410000, 456000].map((amount, i) => (<div key={i} className="flex-1 flex flex-col items-center gap-2">
+                        <div className="w-full bg-primary rounded-t" style={{ height: `${(amount / 500000) * 100}%` }}></div>
                         <div className="text-center">
                           <p className="text-xs text-gray-600">{i + 5}月</p>
                           <p className="text-xs text-gray-900">¥{(amount / 1000).toFixed(0)}k</p>
                         </div>
-                      </div>
-                    ))}
+                      </div>))}
                   </div>
                 </CardContent>
               </Card>
-            </div>
-          )}
+            </div>)}
 
-          {/* 設定 */}
-          {activeSection === "settings" && (
-            <div className="space-y-6">
+          
+          {activeSection === "settings" && (<div className="space-y-6">
               <div>
                 <h1 className="text-2xl sm:text-3xl text-gray-900 mb-2">システム設定</h1>
                 <p className="text-gray-600">MGJプラットフォームの各種設定</p>
@@ -3050,20 +2656,16 @@ export function AdminDashboard() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="text-sm text-gray-600">消費税率</label>
-                      <Input defaultValue="10%" disabled className="mt-1" />
+                      <Input defaultValue="10%" disabled className="mt-1"/>
                     </div>
                     <div>
                       <label className="text-sm text-gray-600">MGJ手数料レート</label>
-                      <Input defaultValue="20%" disabled className="mt-1" />
+                      <Input defaultValue="20%" disabled className="mt-1"/>
                     </div>
                   </div>
                   <div>
                     <label className="text-sm text-gray-600">送料負担ルール</label>
-                    <Input
-                      defaultValue="リース期間6ヶ月以上: アーティスト負担 / 6ヶ月未満: 法人負担"
-                      disabled
-                      className="mt-1"
-                    />
+                    <Input defaultValue="リース期間6ヶ月以上: アーティスト負担 / 6ヶ月未満: 法人負担" disabled className="mt-1"/>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
@@ -3101,26 +2703,18 @@ export function AdminDashboard() {
                 <CardContent className="space-y-4">
                   <div>
                     <label className="text-sm text-gray-600">Stripe API Key</label>
-                    <Input
-                      type="password"
-                      defaultValue="sk_test_xxxxxxxxxxxxxxxxxxxx"
-                      className="mt-1 font-mono"
-                    />
+                    <Input type="password" defaultValue="sk_test_xxxxxxxxxxxxxxxxxxxx" className="mt-1 font-mono"/>
                   </div>
                   <div>
                     <label className="text-sm text-gray-600">Ship&co API Key</label>
-                    <Input
-                      type="password"
-                      defaultValue="shipco_xxxxxxxxxxxxxxxxxxxx"
-                      className="mt-1 font-mono"
-                    />
+                    <Input type="password" defaultValue="shipco_xxxxxxxxxxxxxxxxxxxx" className="mt-1 font-mono"/>
                   </div>
                   <div>
                     <label className="text-sm text-gray-600">AWS S3 Bucket</label>
-                    <Input defaultValue="mgj-artworks-storage" className="mt-1 font-mono" />
+                    <Input defaultValue="mgj-artworks-storage" className="mt-1 font-mono"/>
                   </div>
                   <Button>
-                    <Settings className="w-4 h-4 mr-2" />
+                    <Settings className="w-4 h-4 mr-2"/>
                     設定を保存
                   </Button>
                 </CardContent>
@@ -3135,40 +2729,33 @@ export function AdminDashboard() {
                     <label className="text-sm text-gray-600">通知チャンネル</label>
                     <div className="mt-2 space-y-2">
                       <label className="flex items-center gap-2">
-                        <input type="checkbox" defaultChecked className="rounded" />
+                        <input type="checkbox" defaultChecked className="rounded"/>
                         <span className="text-sm">メール通知</span>
                       </label>
                       <label className="flex items-center gap-2">
-                        <input type="checkbox" defaultChecked className="rounded" />
+                        <input type="checkbox" defaultChecked className="rounded"/>
                         <span className="text-sm">Slack連携</span>
                       </label>
                       <label className="flex items-center gap-2">
-                        <input type="checkbox" className="rounded" />
+                        <input type="checkbox" className="rounded"/>
                         <span className="text-sm">LINE通知</span>
                       </label>
                     </div>
                   </div>
                   <div>
                     <label className="text-sm text-gray-600">Slack Webhook URL</label>
-                    <Input
-                      type="url"
-                      placeholder="https://hooks.slack.com/services/..."
-                      defaultValue=""
-                      className="mt-1 font-mono"
-                    />
+                    <Input type="url" placeholder="https://hooks.slack.com/services/..." defaultValue="" className="mt-1 font-mono"/>
                   </div>
                   <Button>
-                    <Settings className="w-4 h-4 mr-2" />
+                    <Settings className="w-4 h-4 mr-2"/>
                     設定を保存
                   </Button>
                 </CardContent>
               </Card>
-            </div>
-          )}
+            </div>)}
         </main>
       </div>
 
       <Footer />
-    </div>
-  );
+    </div>);
 }

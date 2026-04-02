@@ -9,72 +9,63 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { ImageWithFallback } from "@/components/common/ImageWithFallback";
 import { CheckCircle2, Mail, Clock, Phone, AlertCircle, MessageSquare } from "lucide-react";
-
 type ConfirmationState = {
-  artwork: { title: string; artist: string; image: string };
-  issueType: string;
-  issueTypeLabel?: string;
-  issueDescription: string;
-  discoveryDate: string;
-  /** Server-generated UUID (same pattern as return request 申請ID) */
-  reportId: string;
-  discoveredAtIso?: string | null;
+    artwork: {
+        title: string;
+        artist: string;
+        image: string;
+    };
+    issueType: string;
+    issueTypeLabel?: string;
+    issueDescription: string;
+    discoveryDate: string;
+    reportId: string;
+    discoveredAtIso?: string | null;
 } | null;
-
 function displayReportId(raw: string | undefined): string {
-  const t = raw?.trim();
-  return t || "—";
+    const t = raw?.trim();
+    return t || "—";
 }
-
 export function ArtworkIssueReportConfirmationPage() {
-  const navigate = useNavigate();
-  const { spaceId } = useParams();
-  const location = useLocation();
-  const state = location.state as ConfirmationState;
-
-  useEffect(() => {
-    if (!state) {
-      navigate(`/corporate-space/${spaceId}`);
-    }
-  }, [state, navigate, spaceId]);
-
-  if (!state) return null;
-
-  const { artwork, issueTypeLabel, issueDescription, discoveryDate, reportId } = state;
-  const reportIdDisplay = displayReportId(reportId);
-
-  const discoveryLabel = (() => {
-    if (!discoveryDate) return "—";
-    const d = new Date(discoveryDate);
-    if (!Number.isNaN(d.getTime())) {
-      return d.toLocaleString("ja-JP", {
-        year: "numeric",
-        month: "numeric",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-    }
-    return discoveryDate;
-  })();
-
-  return (
-    <div className="min-h-screen bg-gray-50">
+    const navigate = useNavigate();
+    const { spaceId } = useParams();
+    const location = useLocation();
+    const state = location.state as ConfirmationState;
+    useEffect(() => {
+        if (!state) {
+            navigate(`/corporate-space/${spaceId}`);
+        }
+    }, [state, navigate, spaceId]);
+    if (!state)
+        return null;
+    const { artwork, issueTypeLabel, issueDescription, discoveryDate, reportId } = state;
+    const reportIdDisplay = displayReportId(reportId);
+    const discoveryLabel = (() => {
+        if (!discoveryDate)
+            return "—";
+        const d = new Date(discoveryDate);
+        if (!Number.isNaN(d.getTime())) {
+            return d.toLocaleString("ja-JP", {
+                year: "numeric",
+                month: "numeric",
+                day: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+            });
+        }
+        return discoveryDate;
+    })();
+    return (<div className="min-h-screen bg-gray-50">
       <Header />
 
       <main className="max-w-5xl mx-auto px-4 sm:px-6 pt-20 pb-10 sm:pt-24 sm:pb-12">
-        {/* 成功メッセージ（固定ヘッダー分の余白 + 下セクションとの間隔） */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.5 }}
-          className="mb-8 sm:mb-10"
-        >
+        
+        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.5 }} className="mb-8 sm:mb-10">
           <Card className="border-green-200 bg-green-50/50">
             <CardContent className="pt-6 sm:pt-8 pb-6 sm:pb-8">
               <div className="flex items-start gap-4">
                 <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
-                  <CheckCircle2 className="w-5 h-5 sm:w-6 sm:h-6 text-green-600" />
+                  <CheckCircle2 className="w-5 h-5 sm:w-6 sm:h-6 text-green-600"/>
                 </div>
                 <div className="flex-grow min-w-0">
                   <h2 className="text-lg sm:text-xl text-[#3A3A3A] mb-2">報告を受け付けました</h2>
@@ -82,20 +73,16 @@ export function ArtworkIssueReportConfirmationPage() {
                     担当者が内容を確認し、必要に応じてご登録の連絡先へメールまたはお電話でご連絡します（目安：24時間以内）。
                   </p>
                   <div className="flex flex-wrap gap-2 sm:gap-3 text-xs sm:text-sm text-gray-600">
-                    {reportIdDisplay !== "—" ? (
-                      <div className="max-w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-left shadow-sm">
+                    {reportIdDisplay !== "—" ? (<div className="max-w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-left shadow-sm">
                         <span className="mb-0.5 block text-[11px] font-medium text-gray-500">
                           報告ID（UUID）
                         </span>
                         <span className="block break-all font-mono text-xs text-gray-900 sm:text-sm">
                           {reportIdDisplay}
                         </span>
-                      </div>
-                    ) : (
-                      <Badge variant="outline" className="bg-white">
+                      </div>) : (<Badge variant="outline" className="bg-white">
                         報告ID: —
-                      </Badge>
-                    )}
+                      </Badge>)}
                     <Badge variant="outline" className="bg-white">
                       {new Date().toLocaleDateString("ja-JP")} 受付
                     </Badge>
@@ -108,15 +95,11 @@ export function ArtworkIssueReportConfirmationPage() {
 
         <div className="grid md:grid-cols-3 gap-4 sm:gap-6 md:gap-8">
           <div className="md:col-span-2 space-y-4 sm:space-y-6">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.1 }}
-            >
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.1 }}>
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <Clock className="w-5 h-5 text-accent" />
+                    <Clock className="w-5 h-5 text-accent"/>
                     次のステップ
                   </CardTitle>
                 </CardHeader>
@@ -171,15 +154,11 @@ export function ArtworkIssueReportConfirmationPage() {
               </Card>
             </motion.div>
 
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.2 }}
-            >
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.2 }}>
               <Card className="border-blue-200 bg-blue-50/30">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-blue-700">
-                    <Mail className="w-5 h-5" />
+                    <Mail className="w-5 h-5"/>
                     メールが届かない場合
                   </CardTitle>
                 </CardHeader>
@@ -189,17 +168,17 @@ export function ArtworkIssueReportConfirmationPage() {
                   </p>
                   <ul className="space-y-2 text-xs sm:text-sm text-gray-700">
                     <li className="flex items-start gap-2">
-                      <CheckCircle2 className="w-4 h-4 mt-0.5 text-blue-600 flex-shrink-0" />
+                      <CheckCircle2 className="w-4 h-4 mt-0.5 text-blue-600 flex-shrink-0"/>
                       <span className="break-all font-mono text-[13px] sm:text-sm">
                         報告ID（{reportIdDisplay}）
                       </span>
                     </li>
                     <li className="flex items-start gap-2">
-                      <CheckCircle2 className="w-4 h-4 mt-0.5 text-blue-600 flex-shrink-0" />
+                      <CheckCircle2 className="w-4 h-4 mt-0.5 text-blue-600 flex-shrink-0"/>
                       <span>不具合の種類：{issueTypeLabel ?? "—"}</span>
                     </li>
                     <li className="flex items-start gap-2">
-                      <CheckCircle2 className="w-4 h-4 mt-0.5 text-blue-600 flex-shrink-0" />
+                      <CheckCircle2 className="w-4 h-4 mt-0.5 text-blue-600 flex-shrink-0"/>
                       <span>発見日時：{discoveryLabel}</span>
                     </li>
                   </ul>
@@ -209,22 +188,14 @@ export function ArtworkIssueReportConfirmationPage() {
           </div>
 
           <div className="space-y-4 sm:space-y-6">
-            <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.5, delay: 0.3 }}
-            >
+            <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.5, delay: 0.3 }}>
               <Card>
                 <CardHeader>
                   <CardTitle className="text-sm sm:text-base">報告内容の要約</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="aspect-square rounded-lg overflow-hidden">
-                    <ImageWithFallback
-                      src={artwork.image}
-                      alt={artwork.title}
-                      className="w-full h-full object-cover"
-                    />
+                    <ImageWithFallback src={artwork.image} alt={artwork.title} className="w-full h-full object-cover"/>
                   </div>
                   <div>
                     <h3 className="text-sm sm:text-base text-[#3A3A3A] mb-1">{artwork.title}</h3>
@@ -248,15 +219,11 @@ export function ArtworkIssueReportConfirmationPage() {
               </Card>
             </motion.div>
 
-            <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.5, delay: 0.4 }}
-            >
+            <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.5, delay: 0.4 }}>
               <Card className="border-red-200">
                 <CardHeader>
                   <CardTitle className="text-sm sm:text-base flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 text-red-600" />
+                    <AlertCircle className="w-4 h-4 text-red-600"/>
                     緊急連絡先
                   </CardTitle>
                 </CardHeader>
@@ -267,7 +234,7 @@ export function ArtworkIssueReportConfirmationPage() {
                   <div className="space-y-2">
                     <div className="p-3 bg-red-50 rounded-lg border border-red-200">
                       <div className="flex items-center gap-2 mb-1">
-                        <Phone className="w-4 h-4 text-red-600" />
+                        <Phone className="w-4 h-4 text-red-600"/>
                         <span className="text-xs sm:text-sm text-gray-600">電話番号</span>
                       </div>
                       <p className="text-sm sm:text-base text-red-700">03-1234-5678</p>
@@ -275,7 +242,7 @@ export function ArtworkIssueReportConfirmationPage() {
                     </div>
                     <div className="p-3 bg-gray-50 rounded-lg border">
                       <div className="flex items-center gap-2 mb-1">
-                        <Mail className="w-4 h-4 text-gray-600" />
+                        <Mail className="w-4 h-4 text-gray-600"/>
                         <span className="text-xs sm:text-sm text-gray-600">メール</span>
                       </div>
                       <p className="text-xs sm:text-sm text-gray-700 break-all">
@@ -287,15 +254,11 @@ export function ArtworkIssueReportConfirmationPage() {
               </Card>
             </motion.div>
 
-            <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.5, delay: 0.5 }}
-            >
+            <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.5, delay: 0.5 }}>
               <Card>
                 <CardHeader>
                   <CardTitle className="text-sm sm:text-base flex items-center gap-2">
-                    <MessageSquare className="w-4 h-4 text-accent" />
+                    <MessageSquare className="w-4 h-4 text-accent"/>
                     作品の取り扱いについて
                   </CardTitle>
                 </CardHeader>
@@ -321,15 +284,8 @@ export function ArtworkIssueReportConfirmationPage() {
               </Card>
             </motion.div>
 
-            <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.5, delay: 0.6 }}
-            >
-              <Button
-                onClick={() => navigate(`/corporate-space/${spaceId}`)}
-                className="w-full bg-accent hover:bg-accent/90"
-              >
+            <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.5, delay: 0.6 }}>
+              <Button onClick={() => navigate(`/corporate-space/${spaceId}`)} className="w-full bg-accent hover:bg-accent/90">
                 スペース詳細に戻る
               </Button>
             </motion.div>
@@ -338,6 +294,5 @@ export function ArtworkIssueReportConfirmationPage() {
       </main>
 
       <Footer />
-    </div>
-  );
+    </div>);
 }

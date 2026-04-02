@@ -131,7 +131,7 @@
     font-family: 'Noto Sans JP', sans-serif;
   }
 
-  /* リンク要素とインタラクティブ要素に指のポインターカーソルを適用 */
+  
   a, 
   a > *,
   button:not(:disabled),
@@ -142,9 +142,7 @@
   }
 }
 
-/**
- * Base typography. This is not applied to elements which have an ancestor with a Tailwind text class.
- */
+
 @layer base {
   :where(:not(:has([class*=" text-"]), :not(:has([class^="text-"])))) {
     h1 {
@@ -202,7 +200,7 @@ html {
   scroll-behavior: smooth;
 }
 
-/* 返却ラベル印刷用スタイル */
+
 @media print {
   @page {
     margin: 10mm;
@@ -213,7 +211,7 @@ html {
     padding: 0;
   }
   
-  /* ボタンや不要な要素を非表示 */
+  
   .no-print {
     display: none !important;
   }
@@ -222,7 +220,7 @@ html {
     display: none !important;
   }
   
-  /* ラベルを表示 */
+  
   .print-label {
     display: block !important;
     margin: 0 auto;

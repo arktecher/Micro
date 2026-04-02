@@ -1,6 +1,6 @@
 import { motion } from "motion/react";
 import { useState, useEffect } from "react";
-import { useNavigate, useSearchParams, Link } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { Lock, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,16 +8,10 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
-import { createClient } from "@supabase/supabase-js";
-
-// Initialize Supabase client for password reset
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "";
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
-const supabase = supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
+import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
 
 export function ResetPasswordPage() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -66,6 +60,7 @@ export function ResetPasswordPage() {
       return;
     }
 
+    const supabase = getSupabaseBrowser();
     if (!supabase) {
       toast.error("設定エラーが発生しました");
       return;
@@ -75,79 +70,69 @@ export function ResetPasswordPage() {
     setError("");
 
     try {
-      // Get tokens from sessionStorage
-      const accessToken = sessionStorage.getItem("mgj_reset_token");
-      const refreshToken = sessionStorage.getItem("mgj_reset_refresh_token");
-      
-      if (!accessToken) {
-        throw new Error("リセットトークンが見つかりません。新しいリセットメールをリクエストしてください。");
-      }
+      const { data: existing } = await supabase.auth.getSession();
 
-      console.log("Attempting password reset with token:", accessToken.substring(0, 20) + "...");
-      console.log("Has refresh token:", !!refreshToken);
+      if (!existing.session) {
+        const accessToken = sessionStorage.getItem("mgj_reset_token");
+        const refreshToken = sessionStorage.getItem("mgj_reset_refresh_token");
 
-      // Set the session with the recovery tokens
-      // For recovery flow, we need both access_token and refresh_token
-      const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
-        access_token: accessToken,
-        refresh_token: refreshToken || "",
-      });
-
-      console.log("setSession result:", { 
-        hasSession: !!sessionData?.session, 
-        hasUser: !!sessionData?.user,
-        error: sessionError
-      });
-
-      if (sessionError) {
-        console.error("Session error details:", sessionError);
-        
-        // Translate Supabase session errors to Japanese
-        let errorMessage = "リセットトークンが無効または期限切れです";
-        const errorMsg = sessionError.message.toLowerCase();
-        
-        if (errorMsg.includes("expired") || errorMsg.includes("invalid")) {
-          errorMessage = "リセットトークンが無効または期限切れです。新しいリセットメールをリクエストしてください";
-        } else if (errorMsg.includes("not found")) {
-          errorMessage = "トークンが見つかりません";
+        if (!accessToken) {
+          throw new Error("リセットトークンが見つかりません。新しいリセットメールをリクエストしてください。");
         }
-        
-        throw new Error(errorMessage);
+
+        const { data: sessionData, error: sessionError } =
+          await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken || "",
+          });
+
+        if (sessionError) {
+          console.error("Session error details:", sessionError);
+
+          let errorMessage = "リセットトークンが無効または期限切れです";
+          const errorMsg = sessionError.message.toLowerCase();
+
+          if (errorMsg.includes("expired") || errorMsg.includes("invalid")) {
+            errorMessage =
+              "リセットトークンが無効または期限切れです。新しいリセットメールをリクエストしてください";
+          } else if (errorMsg.includes("not found")) {
+            errorMessage = "トークンが見つかりません";
+          }
+
+          throw new Error(errorMessage);
+        }
+
+        if (!sessionData?.session) {
+          throw new Error(
+            "リセットトークンが無効または期限切れです。新しいリセットメールをリクエストしてください。",
+          );
+        }
       }
 
-      if (!sessionData?.session) {
-        throw new Error("リセットトークンが無効または期限切れです。新しいリセットメールをリクエストしてください。");
-      }
-
-      // Update password
-      console.log("Updating password...");
       const { error: updateError } = await supabase.auth.updateUser({
         password: password,
       });
 
       if (updateError) {
         console.error("Update password error:", updateError);
-        
-        // Translate Supabase errors to Japanese
+
         let errorMessage = "パスワードの更新に失敗しました";
         const errorMsg = updateError.message.toLowerCase();
-        
+
         if (errorMsg.includes("should be different") || errorMsg.includes("same as")) {
           errorMessage = "新しいパスワードは現在のパスワードと異なるものを設定してください";
         } else if (errorMsg.includes("weak") || errorMsg.includes("too short")) {
-          errorMessage = "パスワードが弱すぎます。8文字以上の強固なパスワードを設定してください";
+          errorMessage =
+            "パスワードが弱すぎます。8文字以上の強固なパスワードを設定してください";
         } else if (errorMsg.includes("invalid")) {
           errorMessage = "無効なパスワードです";
         }
-        
+
         throw new Error(errorMessage);
       }
 
-      // Clear tokens
       sessionStorage.removeItem("mgj_reset_token");
       sessionStorage.removeItem("mgj_reset_refresh_token");
-
-      console.log("Password reset successful!");
       setIsSuccess(true);
       toast.success("パスワードが正常にリセットされました");
 

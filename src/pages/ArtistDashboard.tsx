@@ -50,7 +50,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { ArtistReturnRequestDialog } from "@/components/ArtistReturnRequestDialog";
-import { artistService, type ArtistProfile } from "@/services/artist.service";
+import {
+  artistService,
+  type ArtistProfile,
+  type ArtistStatistics,
+  type RevenueAnalytics,
+} from "@/services/artist.service";
 import { userService } from "@/services/user.service";
 import {
   artworkService,
@@ -70,122 +75,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-
-// モックデータ
-const mockStats = {
-  publishedArtworks: 12,
-  exhibitedArtworks: 3,
-  soldArtworks: 2,
-  monthlyRevenue: 160000,
-  totalScans: 124,
-  monthlyScans: 45,
-};
-
-const mockArtworks = [
-  {
-    id: "1",
-    name: "夏の思い出",
-    status: "exhibited",
-    price: 50000,
-    location: "The Tokyo Hotel",
-    scans: 23,
-    exhibitStart: "2024-12-01",
-    hasImage: true,
-    isVideo: false,
-    tags: ["風景", "モダン"],
-  },
-  {
-    id: "2",
-    name: "都市の夜",
-    status: "exhibited",
-    price: 80000,
-    location: "渋谷オフィスビル",
-    scans: 18,
-    exhibitStart: "2024-11-15",
-    hasImage: true,
-    isVideo: false,
-    tags: ["都市", "抽象"],
-  },
-  {
-    id: "3",
-    name: "静寂",
-    status: "published",
-    price: 120000,
-    scans: 34,
-    hasImage: true,
-    isVideo: true,
-    tags: ["抽象", "モダン"],
-  },
-  {
-    id: "4",
-    name: "朝の光",
-    status: "published",
-    price: 65000,
-    scans: 12,
-    hasImage: true,
-    isVideo: false,
-    tags: ["風景"],
-  },
-  {
-    id: "5",
-    name: "冬の詩",
-    status: "sold",
-    price: 95000,
-    soldDate: "2024-10-20",
-    buyer: "株式会社ABC",
-    paymentStatus: "paid",
-    hasImage: true,
-    isVideo: false,
-    tags: ["風景", "季節"],
-  },
-  {
-    id: "6",
-    name: "記憶の断片",
-    status: "withdrawn",
-    price: 70000,
-    exhibitEnd: "2024-10-31",
-    hasImage: true,
-    isVideo: false,
-    tags: ["抽象"],
-  },
-  {
-    id: "7",
-    name: "春の訪れ",
-    status: "draft",
-    price: 55000,
-    hasImage: true,
-    isVideo: false,
-    tags: ["風景", "季節"],
-  },
-  {
-    id: "8",
-    name: "都会の静寂",
-    status: "draft",
-    price: 75000,
-    hasImage: true,
-    isVideo: false,
-    tags: ["都市", "夜景"],
-  },
-];
-
-const mockSalesHistory = [
-  { month: "2024-10", revenue: 95000, count: 1 },
-  { month: "2024-09", revenue: 65000, count: 1 },
-  { month: "2024-08", revenue: 0, count: 0 },
-  { month: "2024-07", revenue: 120000, count: 2 },
-];
-
-const mockProfile = {
-  name: "山田太郎",
-  birthDate: "1995-04-15",
-  email: "yamada@example.com",
-  phone: "090-1234-5678",
-  bio: "自然と都市の対比をテーマに作品を制作しています。色彩と光の表現を大切にしながら、見る人の心に響く作品づくりを心がけています。",
-  career: "2020年 東京藝術大学卒業\n2021年 新人賞受賞\n2022年 個展開催（銀座）",
-  instagram: "@yamada_art",
-  twitter: "@yamada_artist",
-  website: "https://yamada-art.com",
-};
 
 /**
  * 作品タブのステータスフィルターID。
@@ -435,8 +324,14 @@ export function ArtistDashboard() {
   const [artworkCarousels, setArtworkCarousels] = useState<Map<string, { currentIndex: number; isAutoPlaying: boolean; isHovering: boolean }>>(new Map());
   /** Open / investigating issue report counts per artwork (法人からの不具合報告) */
   const [issueOpenCounts, setIssueOpenCounts] = useState<Record<string, number>>({});
-  /** Per status chip counts (GET /artworks/me/status-counts); loaded with artwork list */
+  /** Per status chip counts (GET /artworks/me/status-counts); loaded with artwork list + dashboard bootstrap */
   const [statusCounts, setStatusCounts] = useState<ArtistArtworkStatusCounts | null>(null);
+  /** GET /artists/me/statistics — dashboard + QR + revenue summary */
+  const [artistStatistics, setArtistStatistics] = useState<ArtistStatistics | null>(null);
+  const [isLoadingDashboardStats, setIsLoadingDashboardStats] = useState(false);
+  /** GET /artists/me/analytics/revenue — revenue tab charts & sold list */
+  const [revenueAnalytics, setRevenueAnalytics] = useState<RevenueAnalytics | null>(null);
+  const [revenueAnalyticsLoading, setRevenueAnalyticsLoading] = useState(false);
 
   // 旧「回収済み」フィルター（returned）が状態に残っている場合はすべてに戻す
   useEffect(() => {
@@ -502,6 +397,53 @@ export function ArtistDashboard() {
       return;
     }
   }, [isAuthenticated, userType, isInitialized, navigate]);
+
+  // Dashboard / global stats: align with API (not mock data)
+  useEffect(() => {
+    if (!isInitialized || !isAuthenticated || userType !== "artist") return;
+    let cancelled = false;
+    setIsLoadingDashboardStats(true);
+    Promise.all([
+      artistService.getStatistics(),
+      artworkService.getMyArtworkStatusCounts().catch(() => null),
+    ])
+      .then(([stats, counts]) => {
+        if (cancelled) return;
+        setArtistStatistics(stats);
+        if (counts) setStatusCounts(counts);
+      })
+      .catch((err) => {
+        console.error("Artist dashboard statistics:", err);
+        toast.error("統計情報の読み込みに失敗しました");
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingDashboardStats(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isInitialized, isAuthenticated, userType]);
+
+  useEffect(() => {
+    if (selectedTab !== "revenue" || userType !== "artist" || !isAuthenticated) return;
+    let cancelled = false;
+    setRevenueAnalyticsLoading(true);
+    artistService
+      .getRevenueAnalytics("monthly")
+      .then((data) => {
+        if (!cancelled) setRevenueAnalytics(data);
+      })
+      .catch((err) => {
+        console.error("Revenue analytics:", err);
+        toast.error("収益データの読み込みに失敗しました");
+      })
+      .finally(() => {
+        if (!cancelled) setRevenueAnalyticsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedTab, userType, isAuthenticated]);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -1419,7 +1361,24 @@ export function ArtistDashboard() {
   // Artworks are already filtered by the backend API, so we can use them directly
   const filteredArtworks = artworks;
 
-  const exhibitedArtworks = artworks.filter((a) => a.status === "exhibited");
+  const publishedCount =
+    statusCounts?.published ?? artistStatistics?.artwork_counts.published ?? 0;
+  const exhibitedCount =
+    statusCounts?.exhibited ?? artistStatistics?.artwork_counts.exhibited ?? 0;
+  const soldCount = statusCounts?.sold ?? artistStatistics?.artwork_counts.sold ?? 0;
+  const monthlyRevenue = artistStatistics?.revenue.monthly ?? 0;
+  const totalRevenueAll = artistStatistics?.revenue.total ?? 0;
+  const qrTotal = artistStatistics?.qr_scans.total ?? 0;
+  const qrMonthly = artistStatistics?.qr_scans.monthly ?? 0;
+  const qrTopLocations = artistStatistics?.qr_top_locations ?? [];
+  const qrMonthlyPercent =
+    qrTotal > 0 ? Math.min(100, Math.round((qrMonthly / qrTotal) * 100)) : 0;
+
+  const revenueByMonth = revenueAnalytics?.revenue_by_period ?? [];
+  const maxMonthRev = Math.max(
+    ...revenueByMonth.map((r) => r.revenue),
+    1,
+  );
 
   const handleRequestReturn = (artwork: any, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -1628,10 +1587,12 @@ export function ArtistDashboard() {
           <h1 className="text-2xl sm:text-3xl md:text-4xl text-[#3A3A3A] mb-2 sm:mb-3">
             {profileData?.name || profileFormData.name || "アーティスト"}さんのマイページ
           </h1>
-          <p className="text-sm sm:text-base md:text-lg text-gray-600 flex items-center gap-2 flex-wrap">
+            <p className="text-sm sm:text-base md:text-lg text-gray-600 flex items-center gap-2 flex-wrap">
             <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-[#C3A36D] flex-shrink-0" />
             <span>
-              公開中の作品は{mockStats.publishedArtworks}点、展示中の作品は{mockStats.exhibitedArtworks}点です
+              {isLoadingDashboardStats
+                ? "統計を読み込み中…"
+                : `公開中の作品は${publishedCount}点、展示中の作品は${exhibitedCount}点です`}
             </span>
           </p>
         </motion.div>
@@ -1686,7 +1647,7 @@ export function ArtistDashboard() {
                       <Eye className="w-8 h-8 text-green-500" />
                       <Badge className="bg-green-500 text-white">オンライン公開中</Badge>
                     </div>
-                    <p className="text-3xl text-[#3A3A3A] mb-1">{mockStats.publishedArtworks}点</p>
+                    <p className="text-3xl text-[#3A3A3A] mb-1">{publishedCount}点</p>
                     <p className="text-sm text-gray-600">オンライン公開中の作品</p>
                   </CardContent>
                 </Card>
@@ -1703,11 +1664,12 @@ export function ArtistDashboard() {
                       <Building2 className="w-8 h-8 text-[#C3A36D]" />
                       <Badge className="bg-[#C3A36D] text-white">展示中</Badge>
                     </div>
-                    <p className="text-3xl text-[#3A3A3A] mb-1">{mockStats.exhibitedArtworks}点</p>
+                    <p className="text-3xl text-[#3A3A3A] mb-1">{exhibitedCount}点</p>
                     <p className="text-sm text-gray-600">展示中の作品</p>
-                    {exhibitedArtworks.length > 0 && (
+                    {qrTopLocations.length > 0 && (
                       <p className="text-xs text-gray-500 mt-2">
-                        {exhibitedArtworks[0].location} 他
+                        {qrTopLocations[0].space_name}
+                        {qrTopLocations.length > 1 ? " 他" : ""}
                       </p>
                     )}
                   </CardContent>
@@ -1725,7 +1687,7 @@ export function ArtistDashboard() {
                       <CheckCircle className="w-8 h-8 text-blue-500" />
                       <Badge className="bg-blue-500 text-white">販売済み</Badge>
                     </div>
-                    <p className="text-3xl text-[#3A3A3A] mb-1">{mockStats.soldArtworks}点</p>
+                    <p className="text-3xl text-[#3A3A3A] mb-1">{soldCount}点</p>
                     <p className="text-sm text-gray-600">販売済み作品</p>
                   </CardContent>
                 </Card>
@@ -1742,7 +1704,7 @@ export function ArtistDashboard() {
                       <DollarSign className="w-8 h-8 text-white" />
                       <Badge className="bg-white/20 text-white border-0">今月</Badge>
                     </div>
-                    <p className="text-3xl mb-1">¥{mockStats.monthlyRevenue.toLocaleString()}</p>
+                    <p className="text-3xl mb-1">¥{Math.round(monthlyRevenue).toLocaleString()}</p>
                     <p className="text-sm text-white/80">今月の収益</p>
                   </CardContent>
                 </Card>
@@ -1761,39 +1723,47 @@ export function ArtistDashboard() {
                 <div className="space-y-6">
                   <div>
                     <div className="flex justify-between mb-2">
-                      <span className="text-sm text-gray-600">今月のスキャン数</span>
-                      <span className="text-sm text-[#3A3A3A]">{mockStats.monthlyScans}回</span>
+                      <span className="text-sm text-gray-600">今月のスキャン数（過去30日）</span>
+                      <span className="text-sm text-[#3A3A3A]">{qrMonthly}回</span>
                     </div>
-                    <Progress value={36} className="h-2" />
+                    <Progress value={qrMonthlyPercent} className="h-2" />
                   </div>
                   <div>
                     <div className="flex justify-between mb-2">
                       <span className="text-sm text-gray-600">累計スキャン数</span>
-                      <span className="text-sm text-[#3A3A3A]">{mockStats.totalScans}回</span>
+                      <span className="text-sm text-[#3A3A3A]">{qrTotal}回</span>
                     </div>
-                    <Progress value={62} className="h-2" />
+                    <Progress
+                      value={qrTotal > 0 ? 100 : 0}
+                      className="h-2"
+                    />
                   </div>
                   <div className="pt-4 border-t">
-                    <p className="text-sm text-gray-600 mb-3">📍 最も読まれた場所</p>
+                    <p className="text-sm text-gray-600 mb-3">📍 スキャンが多い展示スペース</p>
                     <div className="space-y-2">
-                      <div className="flex items-center justify-between p-3 bg-[#F8F6F1] rounded-lg">
-                        <div className="flex items-center gap-2">
-                          <MapPin className="w-4 h-4 text-[#C3A36D]" />
-                          <span className="text-sm">The Tokyo Hotel</span>
-                        </div>
-                        <Badge variant="outline" className="border-[#C3A36D]/30 text-[#C3A36D]">
-                          23回
-                        </Badge>
-                      </div>
-                      <div className="flex items-center justify-between p-3 bg-[#F8F6F1] rounded-lg">
-                        <div className="flex items-center gap-2">
-                          <MapPin className="w-4 h-4 text-[#C3A36D]" />
-                          <span className="text-sm">渋谷オフィスビル</span>
-                        </div>
-                        <Badge variant="outline" className="border-[#C3A36D]/30 text-[#C3A36D]">
-                          18回
-                        </Badge>
-                      </div>
+                      {qrTopLocations.length === 0 ? (
+                        <p className="text-sm text-gray-500">
+                          まだQRスキャンがありません。展示が始まると集計されます。
+                        </p>
+                      ) : (
+                        qrTopLocations.map((loc) => (
+                          <div
+                            key={loc.space_id}
+                            className="flex items-center justify-between p-3 bg-[#F8F6F1] rounded-lg"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <MapPin className="w-4 h-4 text-[#C3A36D] flex-shrink-0" />
+                              <span className="text-sm truncate">{loc.space_name}</span>
+                            </div>
+                            <Badge
+                              variant="outline"
+                              className="border-[#C3A36D]/30 text-[#C3A36D] flex-shrink-0"
+                            >
+                              {loc.scan_count}回
+                            </Badge>
+                          </div>
+                        ))
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1810,10 +1780,10 @@ export function ArtistDashboard() {
                   <div>
                     <h3 className="text-xl text-[#3A3A3A] mb-2">現在の状況</h3>
                     <p className="text-base text-gray-600 leading-relaxed mb-3">
-                      あなたの作品は現在、<strong className="text-[#C3A36D]">{mockStats.exhibitedArtworks}つの場所</strong>で展示されています。
+                      あなたの作品は現在、<strong className="text-[#C3A36D]">{exhibitedCount}点</strong>が展示スペースに展示されています。
                     </p>
                     <p className="text-sm text-gray-500">
-                      合計QRスキャン：<strong>{mockStats.totalScans}回</strong>（過去30日：{mockStats.monthlyScans}回）
+                      合計QRスキャン：<strong>{qrTotal}回</strong>（過去30日：{qrMonthly}回）
                     </p>
                   </div>
                 </div>
@@ -3227,7 +3197,9 @@ export function ArtistDashboard() {
                 <CardContent className="pt-6">
                   <DollarSign className="w-8 h-8 mb-3 text-white" />
                   <p className="text-sm text-white/80 mb-1">累計売上</p>
-                  <p className="text-3xl">¥{(mockStats.monthlyRevenue * 2).toLocaleString()}</p>
+                  <p className="text-3xl">
+                    ¥{Math.round(totalRevenueAll).toLocaleString()}
+                  </p>
                 </CardContent>
               </Card>
 
@@ -3235,7 +3207,9 @@ export function ArtistDashboard() {
                 <CardContent className="pt-6">
                   <TrendingUp className="w-8 h-8 mb-3 text-[#C3A36D]" />
                   <p className="text-sm text-gray-600 mb-1">今月売上</p>
-                  <p className="text-3xl text-[#3A3A3A]">¥{mockStats.monthlyRevenue.toLocaleString()}</p>
+                  <p className="text-3xl text-[#3A3A3A]">
+                    ¥{Math.round(monthlyRevenue).toLocaleString()}
+                  </p>
                 </CardContent>
               </Card>
 
@@ -3243,7 +3217,7 @@ export function ArtistDashboard() {
                 <CardContent className="pt-6">
                   <Calendar className="w-8 h-8 mb-3 text-gray-500" />
                   <p className="text-sm text-gray-600 mb-1">次回振込予定</p>
-                  <p className="text-xl text-[#3A3A3A]">2025年1月末</p>
+                  <p className="text-xl text-[#3A3A3A]">—</p>
                 </CardContent>
               </Card>
             </div>
@@ -3257,26 +3231,36 @@ export function ArtistDashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
+                {revenueAnalyticsLoading ? (
+                  <p className="text-sm text-gray-500">読み込み中…</p>
+                ) : revenueByMonth.length === 0 ? (
+                  <p className="text-sm text-gray-500">
+                    販売済みの作品がまだないか、売上データがありません。
+                  </p>
+                ) : (
                 <div className="space-y-4">
-                  {mockSalesHistory.map((item, index) => (
-                    <div key={index} className="space-y-2">
+                  {[...revenueByMonth].reverse().map((item, index) => (
+                    <div key={item.period} className="space-y-2">
                       <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">{item.month}</span>
+                        <span className="text-gray-600">{item.period}</span>
                         <span className="text-[#3A3A3A]">
-                          ¥{item.revenue.toLocaleString()} ({item.count}点)
+                          ¥{Math.round(item.revenue).toLocaleString()}
                         </span>
                       </div>
                       <div className="h-8 bg-gray-100 rounded-lg overflow-hidden">
                         <motion.div
                           initial={{ width: 0 }}
-                          animate={{ width: `${(item.revenue / 120000) * 100}%` }}
-                          transition={{ delay: index * 0.1, duration: 0.8 }}
+                          animate={{
+                            width: `${maxMonthRev > 0 ? Math.min(100, (item.revenue / maxMonthRev) * 100) : 0}%`,
+                          }}
+                          transition={{ delay: index * 0.05, duration: 0.5 }}
                           className="h-full bg-gradient-to-r from-[#C3A36D] to-[#D4B478]"
                         />
                       </div>
                     </div>
                   ))}
                 </div>
+                )}
               </CardContent>
             </Card>
 
@@ -3286,30 +3270,43 @@ export function ArtistDashboard() {
                 <CardTitle>販売済み作品</CardTitle>
               </CardHeader>
               <CardContent>
+                {revenueAnalyticsLoading ? (
+                  <p className="text-sm text-gray-500">読み込み中…</p>
+                ) : !revenueAnalytics?.revenue_by_artwork?.length ? (
+                  <p className="text-sm text-gray-500">販売済みの作品はまだありません。</p>
+                ) : (
                 <div className="space-y-4">
-                  {mockArtworks
-                    .filter((a) => a.status === "sold")
-                    .map((artwork) => (
-                      <div key={artwork.id} className="flex items-center justify-between p-4 bg-[#F8F6F1] rounded-lg">
-                        <div className="flex items-center gap-4">
-                          <div className="w-16 h-16 bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg flex items-center justify-center">
+                  {revenueAnalytics.revenue_by_artwork.map((row) => (
+                      <div
+                        key={row.artwork_id}
+                        className="flex items-center justify-between p-4 bg-[#F8F6F1] rounded-lg"
+                      >
+                        <div className="flex items-center gap-4 min-w-0">
+                          <div className="w-16 h-16 bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg flex items-center justify-center flex-shrink-0">
                             <ImageIcon className="w-8 h-8 text-gray-400" />
                           </div>
-                          <div>
-                            <p className="text-base text-[#3A3A3A] mb-1">{artwork.name}</p>
-                            <p className="text-sm text-gray-600">{artwork.buyer}</p>
-                            <p className="text-xs text-gray-500">{artwork.soldDate}</p>
+                          <div className="min-w-0">
+                            <p className="text-base text-[#3A3A3A] mb-1 truncate">
+                              {row.title}
+                            </p>
+                            <p className="text-xs text-gray-500 font-mono">{row.custom_id}</p>
+                            {row.sold_at && (
+                              <p className="text-xs text-gray-500">
+                                {new Date(row.sold_at).toLocaleDateString("ja-JP")}
+                              </p>
+                            )}
                           </div>
                         </div>
-                        <div className="text-right">
-                          <p className="text-lg text-[#C3A36D] mb-1">¥{artwork.price.toLocaleString()}</p>
-                          <Badge className="bg-green-500 text-white text-xs">
-                            {artwork.paymentStatus === "paid" ? "振込済み" : "振込待ち"}
-                          </Badge>
+                        <div className="text-right flex-shrink-0">
+                          <p className="text-lg text-[#C3A36D] mb-1">
+                            ¥{Math.round(row.price).toLocaleString()}
+                          </p>
+                          <Badge className="bg-green-600 text-white text-xs">販売済み</Badge>
                         </div>
                       </div>
                     ))}
                 </div>
+                )}
               </CardContent>
             </Card>
 
@@ -3319,28 +3316,9 @@ export function ArtistDashboard() {
                 <CardTitle>振込履歴</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between p-4 border-b">
-                    <div>
-                      <p className="text-sm text-[#3A3A3A]">2024年10月分</p>
-                      <p className="text-xs text-gray-500">振込日：2024-11-30</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-base text-[#3A3A3A]">¥95,000</p>
-                      <Badge className="bg-green-500 text-white text-xs mt-1">完了</Badge>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between p-4 border-b">
-                    <div>
-                      <p className="text-sm text-[#3A3A3A]">2024年9月分</p>
-                      <p className="text-xs text-gray-500">振込日：2024-10-31</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-base text-[#3A3A3A]">¥65,000</p>
-                      <Badge className="bg-green-500 text-white text-xs mt-1">完了</Badge>
-                    </div>
-                  </div>
-                </div>
+                <p className="text-sm text-gray-500">
+                  振込の詳細は別途お知らせする予定です。現時点ではデータ連携していません。
+                </p>
               </CardContent>
             </Card>
           </TabsContent>

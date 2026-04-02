@@ -90,6 +90,12 @@ export interface ArtistStatistics {
     total: number;
     monthly: number;
   };
+  /** Top spaces by QR scan count for this artist's exhibited works */
+  qr_top_locations?: Array<{
+    space_id: string;
+    space_name: string;
+    scan_count: number;
+  }>;
   top_artworks: Array<{
     id: string;
     custom_id: string;

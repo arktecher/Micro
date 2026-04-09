@@ -1,4 +1,5 @@
 import { Instagram, Twitter } from "lucide-react";
+import { Link } from "react-router-dom";
 export function Footer() {
     return (<footer className="bg-primary text-white py-16">
       <div className="max-w-7xl mx-auto px-6">
@@ -27,9 +28,9 @@ export function Footer() {
                 </a>
               </li>
               <li>
-                <a href="#/contact" className="hover:text-white transition-colors">
+                <Link to="/contact" className="hover:text-white transition-colors">
                   お問い合わせ
-                </a>
+                </Link>
               </li>
             </ul>
           </div>
@@ -38,24 +39,24 @@ export function Footer() {
             <h4 className="mb-4">法的事項</h4>
             <ul className="space-y-2 text-gray-300">
               <li>
-                <a href="#/terms-of-service" className="hover:text-white transition-colors">
+                <Link to="/terms-of-service" className="hover:text-white transition-colors">
                   利用規約
-                </a>
+                </Link>
               </li>
               <li>
-                <a href="#/privacy-policy" className="hover:text-white transition-colors">
+                <Link to="/privacy-policy" className="hover:text-white transition-colors">
                   プライバシーポリシー
-                </a>
+                </Link>
               </li>
               <li>
-                <a href="#/cookie-policy" className="hover:text-white transition-colors">
+                <Link to="/cookie-policy" className="hover:text-white transition-colors">
                   クッキーポリシー
-                </a>
+                </Link>
               </li>
               <li>
-                <a href="#/commercial-transactions" className="hover:text-white transition-colors">
+                <Link to="/commercial-transactions" className="hover:text-white transition-colors">
                   特定商取引法に基づく表記
-                </a>
+                </Link>
               </li>
             </ul>
           </div>

@@ -191,14 +191,11 @@ function normalizeCorporateTab(raw: string): CorporateDashboardTab {
     return isCorporateDashboardTab(mapped) ? mapped : "dashboard";
 }
 function getCorporateTabFromHash(): CorporateDashboardTab {
-    const hash = window.location.hash;
-    const parts = hash.split("#").filter((p) => p.length > 0);
-    if (parts.length > 1) {
-        const lastPart = parts[parts.length - 1];
-        const [tabHash] = lastPart.split("?");
-        return normalizeCorporateTab(tabHash);
-    }
-    return "dashboard";
+    const raw = window.location.hash.replace(/^#/, "");
+    if (!raw)
+        return "dashboard";
+    const [tabHash] = raw.split("?");
+    return normalizeCorporateTab(tabHash);
 }
 const CORPORATE_TAB_HASH_ALIASES = new Set([
     ...CORPORATE_DASHBOARD_TABS,
@@ -241,19 +238,9 @@ export function CorporateDashboard() {
     const handleTabChange = useCallback((value: string) => {
         const tab = normalizeCorporateTab(value);
         setActiveTab(tab);
-        const currentHash = window.location.hash;
-        const parts = currentHash.split("#").filter((p) => p.length > 0);
-        if (parts.length > 1) {
-            const lastPart = parts[parts.length - 1];
-            const [tabPart] = lastPart.split("?");
-            if (CORPORATE_TAB_HASH_ALIASES.has(tabPart)) {
-                parts.pop();
-            }
-        }
-        const routeHash = parts.length > 0 ? `#${parts.join("#")}` : "#/corporate-dashboard";
-        window.history.replaceState(null, "", `${routeHash}#${tab}`);
+        navigate({ pathname: "/corporate-dashboard", hash: tab }, { replace: true });
         window.scrollTo(0, 0);
-    }, []);
+    }, [navigate]);
     const [aiDialogOpen, setAiDialogOpen] = useState(false);
     const [returnSelection, setReturnSelection] = useState<CorporateDashboardReturnSelection | null>(null);
     const [bankAccountDialogOpen, setBankAccountDialogOpen] = useState(false);
@@ -422,17 +409,14 @@ export function CorporateDashboard() {
     useEffect(() => {
         const tab = getCorporateTabFromHash();
         setActiveTab(tab);
-        const currentHash = window.location.hash;
-        const parts = currentHash.split("#").filter((p) => p.length > 0);
-        const lastPart = parts.length > 1 ? parts[parts.length - 1] : "";
-        const [tabPartRaw] = lastPart.split("?");
-        const hasTabHash = parts.length > 1 && CORPORATE_TAB_HASH_ALIASES.has(tabPartRaw);
-        if (!hasTabHash) {
-            const routeHash = parts.length > 0 ? `#${parts.join("#")}` : "#/corporate-dashboard";
-            window.history.replaceState(null, "", `${routeHash}#${tab}`);
+        const raw = location.hash.replace(/^#/, "");
+        const [tabPartRaw] = raw.split("?");
+        const hasTabHash = raw.length > 0 && CORPORATE_TAB_HASH_ALIASES.has(normalizeCorporateTab(tabPartRaw));
+        if (!hasTabHash && location.pathname === "/corporate-dashboard") {
+            navigate({ hash: tab }, { replace: true });
         }
         window.scrollTo(0, 0);
-    }, [location]);
+    }, [location, navigate]);
     useEffect(() => {
         const onHashChange = () => {
             setActiveTab(getCorporateTabFromHash());

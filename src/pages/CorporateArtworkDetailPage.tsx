@@ -150,7 +150,7 @@ export function CorporateArtworkDetailPage() {
             toast.error("作品IDを取得できませんでした");
             return;
         }
-        const url = `${window.location.origin}/#/artwork/${id}?source=site`;
+        const url = `${window.location.origin}/artwork/${id}?source=site`;
         try {
             await navigator.clipboard.writeText(url);
             toast.success("作品ページのリンクをコピーしました");

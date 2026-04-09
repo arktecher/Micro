@@ -12,11 +12,6 @@ function isSortId(s: string | null): s is CatalogSortId {
 export function readCatalogSearchParamsFromLocation(): URLSearchParams {
     if (typeof window === "undefined")
         return new URLSearchParams();
-    const hash = window.location.hash || "";
-    const q = hash.indexOf("?");
-    if (q >= 0) {
-        return new URLSearchParams(hash.slice(q + 1));
-    }
     return new URLSearchParams(window.location.search || "");
 }
 export interface ArtworksCatalogUrlState {

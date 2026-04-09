@@ -168,21 +168,42 @@ function FilterChipCount({ n, active }: {
       {display}
     </span>);
 }
+const ARTIST_DASHBOARD_TAB_IDS = [
+    "dashboard",
+    "artworks",
+    "profile",
+    "revenue",
+] as const;
+function parseArtistDashboardHash(): {
+    tab: string;
+    query?: string;
+} {
+    if (typeof window === "undefined")
+        return { tab: "dashboard" };
+    const raw = window.location.hash.replace(/^#/, "");
+    if (!raw)
+        return { tab: "dashboard" };
+    const q = raw.indexOf("?");
+    if (q === -1) {
+        const t = raw;
+        return (ARTIST_DASHBOARD_TAB_IDS as readonly string[]).includes(t)
+            ? { tab: t }
+            : { tab: "dashboard" };
+    }
+    const head = raw.slice(0, q);
+    const query = raw.slice(q + 1);
+    if (head === "artworks")
+        return { tab: "artworks", query };
+    return (ARTIST_DASHBOARD_TAB_IDS as readonly string[]).includes(head)
+        ? { tab: head }
+        : { tab: "dashboard" };
+}
 export function ArtistDashboard() {
     const navigate = useNavigate();
     const location = useLocation();
     const { isAuthenticated, userType, isInitialized, currentUser } = useAuth();
     const getInitialTab = (): string => {
-        const hash = window.location.hash;
-        const parts = hash.split("#").filter((p) => p.length > 0);
-        if (parts.length > 1) {
-            const lastPart = parts[parts.length - 1];
-            const [tabHash] = lastPart.split("?");
-            if (["dashboard", "artworks", "profile", "revenue"].includes(tabHash)) {
-                return tabHash;
-            }
-        }
-        return "dashboard";
+        return parseArtistDashboardHash().tab;
     };
     const [selectedTab, setSelectedTab] = useState(getInitialTab());
     const [artworkFilter, setArtworkFilter] = useState<string>("all");
@@ -349,37 +370,18 @@ export function ArtistDashboard() {
     useEffect(() => {
         window.scrollTo(0, 0);
     }, [selectedTab]);
-    const getTabFromHash = (): string => {
-        const hash = window.location.hash;
-        const parts = hash.split("#").filter((p) => p.length > 0);
-        if (parts.length > 1) {
-            const lastPart = parts[parts.length - 1];
-            const [tabHash] = lastPart.split("?");
-            if (["dashboard", "artworks", "profile", "revenue"].includes(tabHash)) {
-                return tabHash;
-            }
-        }
-        return "dashboard";
-    };
     useEffect(() => {
-        const tab = getTabFromHash();
+        const { tab } = parseArtistDashboardHash();
         setSelectedTab(tab);
-        const currentHash = window.location.hash;
-        const parts = currentHash.split("#").filter((p) => p.length > 0);
-        const lastPart = parts.length > 1 ? parts[parts.length - 1] : "";
-        const [tabPart] = lastPart.split("?");
-        const hasTabHash = parts.length > 1 &&
-            ["dashboard", "artworks", "profile", "revenue"].includes(tabPart);
-        if (!hasTabHash) {
-            const routeHash = parts.length > 0 ? `#${parts.join("#")}` : "#/dashboard";
-            window.history.replaceState(null, "", `${routeHash}#dashboard`);
+        const raw = location.hash.replace(/^#/, "");
+        if (!raw && location.pathname === "/dashboard") {
+            navigate({ hash: "dashboard" }, { replace: true });
         }
         window.scrollTo(0, 0);
-    }, [location]);
+    }, [location, navigate]);
     useEffect(() => {
         const handleHashChange = () => {
-            const tab = getTabFromHash();
-            setSelectedTab(tab);
+            setSelectedTab(parseArtistDashboardHash().tab);
             window.scrollTo(0, 0);
         };
         window.addEventListener("hashchange", handleHashChange);
@@ -387,27 +389,12 @@ export function ArtistDashboard() {
     }, []);
     const handleTabChange = (value: string) => {
         setSelectedTab(value);
-        const currentHash = window.location.hash;
-        const parts = currentHash.split("#").filter((p) => p.length > 0);
-        if (parts.length > 1) {
-            const lastPart = parts[parts.length - 1];
-            const [tabPart] = lastPart.split("?");
-            if (["dashboard", "artworks", "profile", "revenue"].includes(tabPart)) {
-                parts.pop();
-            }
-        }
-        const routeHash = parts.length > 0 ? `#${parts.join("#")}` : "#/dashboard";
-        window.history.replaceState(null, "", `${routeHash}#${value}`);
+        navigate({ pathname: "/dashboard", hash: value }, { replace: true });
         window.scrollTo(0, 0);
     };
     useEffect(() => {
         if (selectedTab !== "artworks" || !artworkFiltersInitialized)
             return;
-        const hash = window.location.hash;
-        const parts = hash.split("#").filter((p) => p.length > 0);
-        if (parts.length === 0)
-            return;
-        const routePart = parts[0] || "/dashboard";
         const params = new URLSearchParams();
         if (artworkPage > 1) {
             params.set("page", String(artworkPage));
@@ -484,30 +471,30 @@ export function ArtistDashboard() {
         if (filters.sortOrder)
             params.set("sort_order", filters.sortOrder);
         const queryString = params.toString();
-        const lastPart = queryString ? `artworks?${queryString}` : "artworks";
-        const newHash = `#${[routePart, lastPart].join("#")}`;
-        if (newHash !== hash) {
-            window.history.replaceState(null, "", newHash);
+        const hashFrag = queryString ? `artworks?${queryString}` : "artworks";
+        const cur = window.location.hash.replace(/^#/, "");
+        if (cur !== hashFrag) {
+            navigate({ pathname: "/dashboard", hash: hashFrag }, { replace: true });
         }
-    }, [selectedTab, artworkPage, artworkPageSize, artworkFilter, searchQuery, filters, artworkFiltersInitialized]);
+    }, [selectedTab, artworkPage, artworkPageSize, artworkFilter, searchQuery, filters, artworkFiltersInitialized, navigate]);
     useEffect(() => {
         if (selectedTab !== "artworks") {
             setArtworkFiltersInitialized(false);
             return;
         }
-        const hash = window.location.hash;
-        const parts = hash.split("#").filter((p) => p.length > 0);
-        if (parts.length < 2) {
+        const raw = window.location.hash.replace(/^#/, "");
+        if (!raw) {
             setArtworkFiltersInitialized(true);
             return;
         }
-        const lastPart = parts[parts.length - 1];
-        const [tabHash, queryString] = lastPart.split("?");
-        if (tabHash !== "artworks") {
+        const q = raw.indexOf("?");
+        if (q === -1) {
             setArtworkFiltersInitialized(true);
             return;
         }
-        if (!queryString) {
+        const head = raw.slice(0, q);
+        const queryString = raw.slice(q + 1);
+        if (head !== "artworks" || !queryString) {
             setArtworkFiltersInitialized(true);
             return;
         }

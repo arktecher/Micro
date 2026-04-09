@@ -213,8 +213,7 @@ export function MyPage() {
             return;
         }
         if (!isAuthenticated) {
-            const fullUrl = window.location.hash || window.location.pathname + window.location.search;
-            const redirectUrl = fullUrl.startsWith('#') ? fullUrl.slice(1) : fullUrl;
+            const redirectUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
             localStorage.setItem("mgj_redirect_after_login", redirectUrl);
             navigate("/login/customer");
             return;

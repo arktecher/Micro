@@ -51,15 +51,13 @@ export function SignupPromptDialog({ isOpen, onClose, artworkId, artworkTitle, m
         return () => window.removeEventListener("keydown", handleEsc);
     }, [isOpen, onClose]);
     const handleSignup = () => {
-        const fullUrl = window.location.hash || window.location.pathname + window.location.search;
-        const redirectUrl = fullUrl.startsWith('#') ? fullUrl.slice(1) : fullUrl;
+        const redirectUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
         localStorage.setItem("mgj_redirect_after_signup", redirectUrl);
         localStorage.setItem("mgj_pending_favorite_artwork_id", artworkId);
         navigate("/signup/customer");
     };
     const handleLogin = () => {
-        const fullUrl = window.location.hash || window.location.pathname + window.location.search;
-        const redirectUrl = fullUrl.startsWith('#') ? fullUrl.slice(1) : fullUrl;
+        const redirectUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
         localStorage.setItem("mgj_redirect_after_login", redirectUrl);
         localStorage.setItem("mgj_pending_favorite_artwork_id", artworkId);
         navigate("/login-selection");

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { Search, ChevronDown } from "lucide-react";
@@ -357,9 +358,9 @@ export function CorporateFAQPage() {
           
           <div className="mt-12 sm:mt-16 text-center p-6 sm:p-8 bg-[#FAFAFA] rounded-lg border border-[#E5E5E5]">
             <p className="text-sm sm:text-base text-[#1A1A1A] mb-3 sm:mb-4">解決しない場合は、お気軽にお問い合わせください。</p>
-            <a href="#/contact" className="inline-block px-6 sm:px-8 py-2 sm:py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors text-sm sm:text-base">
+            <Link to="/contact" className="inline-block px-6 sm:px-8 py-2 sm:py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors text-sm sm:text-base">
               お問い合わせフォームへ
-            </a>
+            </Link>
           </div>
         </div>
       </main>

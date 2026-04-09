@@ -110,13 +110,7 @@ export function CorporateSignupPage() {
     const { login, isAuthenticated, userType, isInitialized } = useAuth();
     const [searchParams] = useSearchParams();
     const location = useLocation();
-    const hashSearch = (() => {
-        const hash = window.location.hash || "";
-        const idx = hash.indexOf("?");
-        return idx >= 0 ? hash.slice(idx + 1) : "";
-    })();
-    const hashParams = new URLSearchParams(hashSearch);
-    const isAddSpaceMode = searchParams.get("addSpace") === "true" || hashParams.get("addSpace") === "true";
+    const isAddSpaceMode = searchParams.get("addSpace") === "true";
     const [currentStep, setCurrentStep] = useState(() => {
         const sp = new URLSearchParams(window.location.search);
         const hash = window.location.hash || "";
@@ -293,11 +287,7 @@ export function CorporateSignupPage() {
     useEffect(() => {
         const checkAddSpace = () => {
             const sp = new URLSearchParams(window.location.search);
-            const hash = window.location.hash || "";
-            const hashIdx = hash.indexOf("?");
-            const hashSearch = hashIdx >= 0 ? hash.slice(hashIdx + 1) : "";
-            const hp = new URLSearchParams(hashSearch);
-            return sp.get("addSpace") === "true" || hp.get("addSpace") === "true";
+            return sp.get("addSpace") === "true";
         };
         const shouldBeAddSpace = checkAddSpace();
         if (shouldBeAddSpace && currentStep !== 2) {

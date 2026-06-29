@@ -80,23 +80,14 @@ export function QRCodeManager({ spaceId, spaceName, currentArtworkId, currentArt
         const svg = document.querySelector(`#qr-canvas-${spaceId} svg`) as SVGElement;
         if (svg) {
             const svgData = new XMLSerializer().serializeToString(svg);
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            const img = new Image();
-            canvas.width = 200;
-            canvas.height = 200;
-            img.onload = () => {
-                if (ctx) {
-                    ctx.drawImage(img, 0, 0);
-                    const pngUrl = canvas.toDataURL('image/png');
-                    const link = document.createElement('a');
-                    link.href = pngUrl;
-                    link.download = `qr-code-${spaceId}-${spaceName}.png`;
-                    link.click();
-                    toast.success('QRコードをダウンロードしました');
-                }
-            };
-            img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));
+            const blob = new Blob([svgData], { type: 'image/svg+xml' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `qr-code-${spaceId}-${spaceName}.svg`;
+            link.click();
+            URL.revokeObjectURL(url);
+            toast.success('QRコードをダウンロードしました');
         }
     };
     return (<>
